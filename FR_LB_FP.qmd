@@ -1,0 +1,331 @@
+---
+title: "Fertilice Right"
+title-block-banner: true
+date: today
+number-sections: true
+format:
+   html:
+    toc: true
+    toc-location: left
+    toc-expand: 3
+    number-sections: true
+    number-depth: 3
+    theme: cosmo
+    df-print: paged
+    code-fold: true 
+    output-fold: true
+editor: visual
+---
+
+<!-- Zoom for figures -->
+
+```{css zoom-lib-src, echo = FALSE}
+script src = "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"
+```
+
+```{js zoom-jquery, echo = FALSE}
+ $(document).ready(function() {
+    $('body').prepend('<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>');
+    // onClick function for all plots (img's)
+    $('img:not(.zoomImg)').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src')).css({width: '100%'});
+      $('.zoomDiv').css({opacity: '1', width: 'auto', border: '1px solid white', borderRadius: '5px', position: 'fixed', top: '50%', left: '50%', marginRight: '-50%', transform: 'translate(-50%, -50%)', boxShadow: '0px 0px 50px #888888', zIndex: '50', overflow: 'auto', maxHeight: '100%'});
+    });
+    // onClick function for zoomImg
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').css({opacity: '0', width: '0%'}); 
+    });
+  });
+```
+
+First, we will organize the information in our data frame according to the accumulated recommendations for each treatment to observe differences between them. We will focus on the recommendations for each **crop (Rice and Banana)**.
+
+-   Organize our dataset according to the following recommendations:
+    -   Accumulated recommendations for each treatment.
+    -   Different treatments for each crop, focusing on the principal elements **(N, P, and K)**, recommendations along all farms.
+    -   Establish differences between the elements applications.
+
+Through this we will be able to answer the followed questions:
+
+-   How do the different treatments affect the nutrient recommendations for each crop?
+-   What are the differences between the nutrient recommendations for each crop?
+-   Are we reaching the objectives of the fertilization plan?
+
+let's start by loading the necessary libraries and the data frame.
+
+```{r}
+#| echo: true
+#| output: false
+#| warning: false
+#| message: false
+
+# Load the necessary libraries
+
+list_p <- c("tidyverse", "readxl", "soiltexture", 
+            "readr", "caret", "plotly")
+
+sapply(list_p, function(x) {
+       if(!require(x, character.only = TRUE)) {
+         install.packages(x, dependencies = TRUE)
+         library(x, character.only = TRUE)
+       }
+       })
+
+FR_Plan <- read_excel("D:\\OneDrive - CGIAR\\Fertilize Right ADMIN\\ACTIVIDADES\\A3. LB Suelos\\Analisis/Fertilizacion.xlsx", 
+                    na = c("null", NA), sheet = "Fertilizations") ## Fertilization plan for both crops
+FR_SL <- read_excel("D:\\OneDrive - CGIAR\\Fertilize Right ADMIN\\ACTIVIDADES\\A3. LB Suelos\\Analisis\\Suelos_LB.xlsx",
+                    na = c("null", NA)) ## Soil data analysis results for both crops
+
+
+str(FR_Plan)
+summary(FR_Plan)
+```
+
+Once we have our data uploaded, let's select the variables that we will implement for our analysis. In this case, we will focus on the **Treatment, Crop, and the Nutrient recommendations (N, P, and K)**.
+
+Lets select the data that we will use for our analysis.
+
+```{r}
+
+```
+
+
+::: {.panel-tabset .nav-pills}
+## Rice
+
+```{r}
+#| echo: true
+#| output: true
+#| message: false
+#| warning: false
+
+# Observe the difference between N, P, and K applications for the rice crop.
+
+FR_Plan |>
+  filter(Cultivo == "Arroz") |>
+  group_by(Finca, Tratamiento) |>
+  mutate(N_kg_ha = mean(`Aporte N (Kg/ha)`, na.rm = TRUE),
+         P_kg_ha = mean(`Aporte P (Kg/ha)`, na.rm = TRUE),
+         K_kg_ha = mean(`Aporte K (Kg/ha)`, na.rm = TRUE), 
+         Tratamiento = factor(Tratamiento, 
+                              levels = c("Convencional", "Optimizado", "Alternativo"))) |>
+  pivot_longer(cols = c(N_kg_ha, P_kg_ha, K_kg_ha),
+               names_to = "Variables", values_to = "Values") |>
+  ggplot(aes(x = Finca, y = Values, 
+             fill = Tratamiento)) +
+  geom_col(position = "dodge", width =  0.5) +
+  facet_wrap(~ Variables, scales = "free_y") +
+  scale_fill_manual(values = c("#F4A460", "#48D1CC", "#B0E0E6")) +
+  guides(color = "none") +
+  theme_light(base_size = 12) +
+  theme(axis.title.x = element_text(size = 8, face = "bold.italic"),
+        axis.title.y = element_text(size = 8, face = "bold.italic"),
+        legend.title = element_text(size = 8, face = "bold"),
+        axis.text.x = element_text(size = 6, face = "bold"),
+        strip.text = element_text(size = 8, face = "bold"))
+  
+
+```
+
+## Banana
+
+```{r}
+#| echo: true
+#| output: true
+#| message: false
+#| warning: false
+
+# Plotting the data
+
+FR_Plan |>
+  filter(Cultivo == "Banano") |>
+  group_by(Finca, Tratamiento) |>
+  mutate(N_kg_ha = mean(`Aporte N (Kg/ha)`, na.rm = TRUE),
+         P_kg_ha = mean(`Aporte P (Kg/ha)`, na.rm = TRUE),
+         K_kg_ha = mean(`Aporte K (Kg/ha)`, na.rm = TRUE), 
+         Tratamiento = factor(Tratamiento, 
+                              levels = c("Convencional", "Optimizado", "Alternativo"))) |>
+  pivot_longer(cols = c(N_kg_ha, P_kg_ha, K_kg_ha),
+               names_to = "Variables", values_to = "Values") |>
+  ggplot(aes(x = Variables, y = Values, 
+             fill = Tratamiento)) +
+  geom_col(position = "dodge", width =  0.5) +
+  facet_wrap(~ Variables, scales = "free_y") +
+  scale_fill_manual(values = c("#F4A460", "#48D1CC", "#B0E0E6")) +
+  guides(color = "none") +
+  theme_light(base_size = 12) +
+  theme(axis.title.x = element_text(size = 8, face = "bold.italic"),
+        axis.title.y = element_text(size = 8, face = "bold.italic"),
+        legend.title = element_text(size = 8, face = "bold"),
+        axis.text.x = element_text(size = 6, face = "bold"),
+        strip.text = element_text(size = 8, face = "bold"))
+
+```
+:::
+
+Let's make an acummulative plot considering the nitrogen, phosphorus, and potassium applications for the rice crop.
+
+::: {.panel-tabset .nav-pills}
+## Rice
+
+```{r}
+#| echo: true
+#| output: true
+#| message: false
+#| warning: false
+
+FR_Plan |> 
+  filter(Cultivo == "Arroz") |>
+  mutate(DDS = as.numeric(DDS)) |>
+  arrange(Finca, Tratamiento, DDS) |>
+  group_by(Finca, Tratamiento, DDS) |>
+  summarize(Cum_N = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+            Cum_P = sum(`Aporte P (Kg/ha)`, na.rm = TRUE),
+            Cum_K = sum(`Aporte K (Kg/ha)`, na.rm = TRUE)) |>
+  mutate(Cum_N = cumsum(Cum_N),
+         Cum_P = cumsum(Cum_P),
+         Cum_K = cumsum(Cum_K)) |>
+  pivot_longer(cols = c(Cum_N, Cum_P, Cum_K),
+               names_to = "Variables", values_to = "Values") |>
+  mutate(Variables = factor(Variables, levels = c("Cum_N", "Cum_P", "Cum_K"))) |>
+  ggplot(aes(x = DDS, y = Values, colour = Tratamiento)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "loess", se = FALSE, span = 1, size = 1.2, na.rm = TRUE) +
+  facet_wrap(Finca ~ Variables, scales = "free_y") + 
+    scale_color_manual(values = c("Convencional" = "#F4A460", 
+                                "Optimizado" = "#48D1CC", 
+                                "Alternativo" = "#B0E0E6")) +
+  guides(color = guide_legend(title = "Tratamiento")) +
+  guides(color = "none") +
+  theme_light(base_size = 12) +
+  theme(legend.position = "right",
+        axis.title.x = element_text(size = 8, face = "bold.italic"),
+        axis.title.y = element_text(size = 8, face = "bold.italic"),
+        legend.title = element_text(size = 8, face = "bold"),
+        axis.text.x = element_text(size = 6, face = "bold"),
+        strip.text = element_text(size = 8, face = "bold"))
+
+# Aggregate nutrient contribution by product
+FR_Plan |>
+  filter(Cultivo == "Arroz") |>
+  group_by(Product) |>
+  mutate(Total_N = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+            Total_P = sum(`Aporte P (Kg/ha)`, na.rm = TRUE),
+            Total_K = sum(`Aporte K (Kg/ha)`, na.rm = TRUE)) |>
+  pivot_longer(cols = c(Total_N, Total_P, Total_K),
+               names_to = "Nutrient", values_to = "Value") |>
+  mutate(Nutrient = factor(Nutrient, levels = c("Total_N", "Total_P", "Total_K"))) |> 
+  ggplot(aes(x = reorder(Product, Value), y = Value, fill = Nutrient)) +
+  geom_col(position = "dodge") +
+  facet_wrap(Tratamiento ~ Finca, scales = "free_y") +
+  coord_flip() +
+  scale_fill_manual(values = c("#FF6A6A", "#EE9572", "#9BCD9B")) +
+  labs(title = "Total Nutrient Contribution by Fertilizer Product",
+       x = "Fertilizer Product", y = "Total Nutrient (Kg/ha)") +
+  theme_minimal() + 
+  theme(legend.position = "right",
+        axis.title.x = element_text(size = 8, face = "bold.italic"),
+        axis.title.y = element_text(size = 8, face = "bold.italic"),
+        legend.title = element_text(size = 8, face = "bold"),
+        axis.text.x = element_text(size = 6, face = "bold"),
+        strip.text = element_text(size = 8, face = "bold"))
+
+
+
+```
+
+## Banana
+
+```{r, warning=FALSE}
+#| echo: true
+#| output: true
+#| message: false
+#| warning: false
+
+FR_Plan |> 
+  filter(Cultivo == "Banano") |>
+  mutate(DDS = as.numeric(DDS)) |>
+  arrange(Finca, Tratamiento, DDS) |>
+  group_by(Finca, Tratamiento, DDS) |>
+  summarize(Cum_N = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+            Cum_P = sum(`Aporte P (Kg/ha)`, na.rm = TRUE),
+            Cum_K = sum(`Aporte K (Kg/ha)`, na.rm = TRUE)) |>
+  mutate(Cum_N = cumsum(Cum_N),
+         Cum_P = cumsum(Cum_P),
+         Cum_K = cumsum(Cum_K)) |>
+  pivot_longer(cols = c(Cum_N, Cum_P, Cum_K),
+               names_to = "Variables", values_to = "Values") |>
+  mutate(Variables = factor(Variables, levels = c("Cum_N", "Cum_P", "Cum_K"))) |>
+  ggplot(aes(x = DDS, y = Values, colour = Tratamiento)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "loess", se = FALSE, span = 1, size = 1.2, na.rm = TRUE) +
+  facet_wrap(Finca ~ Variables, scales = "free_y") + 
+    scale_color_manual(values = c("Convencional" = "#F4A460", 
+                                "Optimizado" = "#48D1CC", 
+                                "Alternativo" = "#B0E0E6")) +
+  guides(color = guide_legend(title = "Tratamiento")) +
+  guides(color = "none") +
+  theme_light(base_size = 12) +
+  theme(legend.position = "right",
+        axis.title.x = element_text(size = 8, face = "bold.italic"),
+        axis.title.y = element_text(size = 8, face = "bold.italic"),
+        legend.title = element_text(size = 8, face = "bold"),
+        axis.text.x = element_text(size = 6, face = "bold"),
+        strip.text = element_text(size = 8, face = "bold"))
+
+# Aggregate nutrient contribution by product
+FR_Plan |>
+  filter(Cultivo == "Banano") |>
+  group_by(Product) |>
+  summarize(Total_N = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+            Total_P = sum(`Aporte P (Kg/ha)`, na.rm = TRUE),
+            Total_K = sum(`Aporte K (Kg/ha)`, na.rm = TRUE)) |>
+  pivot_longer(cols = c(Total_N, Total_P, Total_K),
+               names_to = "Nutrient", values_to = "Value") |>
+  mutate(Nutrient = factor(Nutrient, levels = c("Total_N", "Total_P", "Total_K"))) |> 
+  ggplot(aes(x = reorder(Product, Value), y = Value, fill = Nutrient)) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  scale_fill_manual(values = c("#FF6A6A", "#EE9572", "#9BCD9B")) +
+  labs(title = "Total Nutrient Contribution by Fertilizer Product",
+       x = "Fertilizer Product", y = "Total Nutrient (Kg/ha)") +
+  theme_minimal() + 
+  theme(legend.position = "right",
+        axis.title.x = element_text(size = 8, face = "bold.italic"),
+        axis.title.y = element_text(size = 8, face = "bold.italic"),
+        legend.title = element_text(size = 8, face = "bold"),
+        axis.text.x = element_text(size = 6, face = "bold"),
+        strip.text = element_text(size = 8, face = "bold"))
+
+
+
+```
+:::
+
+```{r}
+#| echo: true
+#| output: true
+#| message: false
+#| warning: false
+
+# library(ggtern)  # Special package for ternary plots
+# 
+# # Prepare data for ternary plot
+# FR_Plan |>
+#   filter(!is.na(`Aporte N (Kg/ha)`), 
+#          !is.na(`Aporte P (Kg/ha)`), 
+#          !is.na(`Aporte K (Kg/ha)`)) |>
+#   mutate(Total_NPK = `Aporte N (Kg/ha)` + `Aporte P (Kg/ha)` + `Aporte K (Kg/ha)`,
+#          N_Ratio = `Aporte N (Kg/ha)` / Total_NPK,
+#          P_Ratio = `Aporte P (Kg/ha)` / Total_NPK,
+#          K_Ratio = `Aporte K (Kg/ha)` / Total_NPK) |>
+#   ggtern(aes(x = N_Ratio, y = P_Ratio, z = K_Ratio, color = Tratamiento)) +
+#   geom_point(size = 3) +
+#   labs(title = "Ternary Plot of NPK Fertilization",
+#        x = "Nitrogen Ratio", y = "Phosphorus Ratio", z = "Potassium Ratio") +
+#   theme_minimal() +
+#   scale_color_manual(values = c("Convencional" = "#F4A460", 
+#                                 "Optimizado" = "#48D1CC", 
+#                                 "Alternativo" = "#B0E0E6"))
+
+```

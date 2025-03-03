@@ -10,12 +10,12 @@ lapply(list_p, function(x) {
   }
 })
 
-a
+
 
 ### Lets upload the library ###
-df <- read_dta("D:\\OneDrive - CGIAR\\R_projects\\New folder\\Data/mod_g2_long_v3.dta", 
+df <- read_dta("D:\\OneDrive - CGIAR\\R_projects\\Fertilice_right/Data/mod_g2_long_v3.dta", 
                encoding = NULL)
-labels <- read.csv("D:\\OneDrive - CGIAR\\R_projects\\New folder\\Data/Labels.csv")
+labels <- read.csv("D:\\OneDrive - CGIAR\\R_projects\\Fertilice_right/Data/Labels.csv")
 rename_vector <- setNames(labels$Shp_name, labels$Label)
 df_mod <- df |>
   dplyr::rename_with(~ rename_vector[.x], 
@@ -350,6 +350,10 @@ df_units <- df_Nitro |>
 
 #### lets remove outliners from our reference Nitrogen database ####
 
+Lowers_df <- df_units |>
+  filter((Qtity_Kl_ha < 20)) |>
+  as.data.frame()
+
 Select_df <- df_units |>
   filter(!(Qtity_Kl_ha <= 10 | (Qtity_Kl_ha >= 500 & Qtity_Kl_ha <= 650))) |>
   as.data.frame()
@@ -378,7 +382,7 @@ Summary_fert |>
 
 Select_df |>
   group_by(Apli_Event, ModNamProd) |>
-  filter(Location_2 == 5) |>
+  # filter(Location_2 == 5) |>
   summarise(
     Total_use = n(),
     Avg_use = mean(Qtity_Kl_ha, na.rm = TRUE),
@@ -386,7 +390,7 @@ Select_df |>
     median = median(Qtity_Kl_ha, na.rm = TRUE),
     .groups = "drop"
   ) |>
-  # filter(Total_use >= ) |>
+  filter(Sd != "NA", Total_use >= 10) |>
   select(Apli_Event, ModNamProd, Avg_use) |>
   group_by(Apli_Event) |> 
   ggplot(aes(x= reorder(ModNamProd, Avg_use), y = Avg_use, fill = ModNamProd)) +
