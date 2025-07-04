@@ -151,7 +151,20 @@ facet_wrap(~ Variable,
 #| message: false
 
 library(htmltools)
+library(fontawesome)
 
+reactable_id <- "fert-download-table"
+
+browsable(
+    tagList(
+    tags$div(
+      style = "margin-bottom: 10px; text-align: center;",
+      tags$button(
+        tagList(fontawesome::fa("download"), "Download as CSV"),
+        onclick = glue::glue("Reactable.downloadDataCSV('{reactable_id}', 'CRS_data.csv')"),
+        style = "background-color: #4CAF50; color: white; border: none; padding: 8px 16px; font-size: 14px; cursor: pointer;"
+      )
+    ),
 div(
   style = "display: flex; justify-content: center; width: 100%;",
 reactable(
@@ -172,9 +185,9 @@ FR_Plan |>
   summarize(N_mean = round(mean(N, na.rm = TRUE),2),
             P_mean = round(mean(P, na.rm = TRUE),2),
             K_mean = round(mean(K, na.rm = TRUE),2),
-            N_sd = round(sd(N, na.rm = TRUE),2),
-            P_sd = round(sd(P, na.rm = TRUE),2),
-            K_sd = round(sd(K, na.rm = TRUE),2),
+            # N_sd = round(sd(N, na.rm = TRUE),2),
+            # P_sd = round(sd(P, na.rm = TRUE),2),
+            # K_sd = round(sd(K, na.rm = TRUE),2),
             .groups = "drop") |>
     pivot_longer(
     cols = -Tratamiento,
@@ -185,7 +198,8 @@ FR_Plan |>
          Variable = case_when(Variable == "P" ~ "P2O5",
                               Variable == "K" ~ "K2O",
                               TRUE ~ Variable)) |> 
-    set_names(c("Tratamiento", "Variable", "Kg/ha", "SD")),
+    set_names(c("Tratamiento", "Variable", "Kg/ha")),
+    elementId = reactable_id,
     # Organizing the table to show bellow the graph
     fullWidth = FALSE,
     width = "500px",
@@ -200,10 +214,9 @@ FR_Plan |>
                  fontSize = 12)),
     bordered = TRUE, 
     highlight = TRUE,
-    columns = list("Kg/ha" = colDef(filterable = FALSE), 
-                   "SD" = colDef(filterable = FALSE)),
+    columns = list("Kg/ha" = colDef(filterable = FALSE)),
     filterable = TRUE
-))
+))))
 
 ```
 
@@ -255,7 +268,7 @@ FR_Plan |>
   scale_fill_manual(values = c("#F4A460", "#48D1CC")) +
   guides(color = "none") +
   theme_light(base_size = 12) +
-  coord_cartesian(ylim = c(0, 500)) +
+  coord_cartesian(ylim = c(0, 1000)) +
   theme(axis.title.x = element_text(size = 8, face = "bold.italic"),
         axis.title.y = element_text(size = 8, face = "bold.italic"),
         legend.title = element_text(size = 8, face = "bold"),
@@ -270,6 +283,18 @@ FR_Plan |>
 #| warning: false
 #| message: false
 
+reactable_id2 <- "fert-download-table"
+
+browsable(
+    tagList(
+    tags$div(
+      style = "margin-bottom: 10px; text-align: center;",
+      tags$button(
+        tagList(fontawesome::fa("download"), "Download as CSV"),
+        onclick = glue::glue("Reactable.downloadDataCSV('{reactable_id2}', 'CRS_data.csv')"),
+        style = "background-color: #4CAF50; color: white; border: none; padding: 8px 16px; font-size: 14px; cursor: pointer;"
+      )
+    ),
 div(
   style = "display: flex; justify-content: center; width: 100%;",
 reactable(
@@ -298,6 +323,7 @@ FR_Plan |>
                               TRUE ~ Variable)) |> 
     set_names(c("Tratamiento", "Variable", "Kg/ha")),
     # Organizing the table to show bellow the graph
+    elementId = reactable_id2,
     fullWidth = FALSE,
     width = "400px",
     defaultColDef = colDef(cell = function(value) {
@@ -312,7 +338,7 @@ FR_Plan |>
     bordered = TRUE, 
     highlight = TRUE,
     columns = list(mean = colDef(filterable = FALSE), 
-                  filterable = TRUE)))
+                  filterable = TRUE)))))
 
 ```
 :::
@@ -435,7 +461,7 @@ Plot_1 <- suppressWarnings(FR_Plan |>
               stat = "identity", 
               width = 0.65, alpha = 0.65) + 
      scale_fill_manual(values = c("#BCEE68", "#5F9EA0", "#009ACD", 
-                                  "#FFB90F", "#FF8C00")) +
+                                  "#FFB90F", "#FF8C00", "#D1EEEE")) +
      guides(color = "none") +
      theme_light(base_size = 12) +
      coord_cartesian(ylim = c(0, 200)) + 
@@ -455,6 +481,7 @@ Plot_2 <- suppressWarnings(FR_Plan |>
      Product == "Urea" ~ "Traditional",
      Product == "Nitroxtend XP-S" ~ "Enhanced urea", 
      Product == "Microessentials" ~ "Traditional",
+     Product == "Volcano" ~ "Enhanced urea",
      TRUE ~ Product)) |>
      mutate(Tratamiento = case_when(
            Tratamiento == "Convencional" ~ "Conventional", 
@@ -705,7 +732,9 @@ suppressWarnings(FR_Plan |>
               stat = "identity", 
               width = 0.40, alpha = 0.65) + 
      scale_fill_manual(values = c("#BCEE68", "#5F9EA0", "#009ACD", 
-                                  "#FFB90F", "#FF8C00")) +
+                                  "#FFB90F", "#FF8C00", "#EE6363", 
+                                  "#EEE685", "#CD69C9", "#EECBAD", 
+                                  "#CD0000", "#3A5FCD", "#708090")) +
      xlab("Treatment") +
      guides(color = "none") +
      theme_light(base_size = 12) +
@@ -770,7 +799,6 @@ reactable(
 )))
 
 ```
-
 
 ```{r}
 #| echo: false
@@ -943,7 +971,7 @@ N_ava |>
      geom_hline(yintercept = 100, linetype = "dashed", color = "#CD4F39") +
      facet_wrap(~ Finca, scales = "free_y") +
      labs(y = expression("%")) +
-     scale_fill_manual(values = c("#48D1CC", "#668B8B", "#009ACD", "#8DB6CD", "#BCD2EE")) +
+     scale_fill_manual(values = c("#48D1CC", "#668B8B", "#009ACD", "#8DB6CD", "#BCD2EE", "#B0C4DE")) +
      guides(color = "none") +
      theme_light(base_size = 12) +
      coord_cartesian(ylim = c(0, 120)) +
@@ -1057,7 +1085,7 @@ N_ava |>
      xlab("Treatment") +
      guides(color = "none") +
      theme_light(base_size = 12) +
-     coord_cartesian(ylim = c(0, 400)) +
+     coord_cartesian(ylim = c(0, 500)) +
      # facet_wrap(~ Finca, scales = "free_y") +
      theme(axis.title.x = element_text(size = 8, face = "bold.italic"),
         axis.title.y = element_text(size = 8, face = "bold.italic"),
@@ -1125,8 +1153,7 @@ Let's generate a timeline representing the fertilization dates in each farm and 
 
 ## Arroz
 
-:::{.panel-tabset .nav-pills}
-
+::: {.panel-tabset .nav-pills}
 ## Farm 1
 
 ```{r}
@@ -1225,7 +1252,4 @@ FR_Plan |>
         axis.text.x = element_text(size = 8, face = "bold", angle = 45, hjust = 1),
         strip.text = element_text(size = 8, face = "bold"))
 ```
-
 :::
-
-
