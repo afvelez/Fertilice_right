@@ -5,6 +5,23 @@ date: today
 number-sections: true
 format:
    html:
+    include-in-header:
+      - text: |
+          <script src = "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js""></script>
+          <script type="text/javascript">
+            $(document).ready(function() {
+              $('body').prepend('<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>');
+              // onClick function for all plots (img's)
+              $('img:not(.zoomImg)').click(function() {
+                $('.zoomImg').attr('src', $(this).attr('src')).css({width: '100%'});
+                $('.zoomDiv').css({opacity: '1', width: 'auto', border: '1px solid white', borderRadius: '5px', position: 'fixed', top: '50%', left: '50%', marginRight: '-50%', transform: 'translate(-50%, -50%)', boxShadow: '0px 0px 50px #888888', zIndex: '50', overflow: 'auto', maxHeight: '100%'});
+              });
+              // onClick function for zoomImg
+              $('img.zoomImg').click(function() {
+                $('.zoomDiv').css({opacity: '0', width: '0%'}); 
+              });
+            });
+          </script>
     toc: true
     toc-location: left
     toc-expand: 3
@@ -16,27 +33,6 @@ format:
     output-fold: true
 editor: visual
 ---
-
-<!-- Zoom for figures -->
-
-```{css zoom-lib-src, echo = FALSE}
-script src = "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"
-```
-
-```{js zoom-jquery, echo = FALSE}
- $(document).ready(function() {
-    $('body').prepend('<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>');
-    // onClick function for all plots (img's)
-    $('img:not(.zoomImg)').click(function() {
-      $('.zoomImg').attr('src', $(this).attr('src')).css({width: '100%'});
-      $('.zoomDiv').css({opacity: '1', width: 'auto', border: '1px solid white', borderRadius: '5px', position: 'fixed', top: '50%', left: '50%', marginRight: '-50%', transform: 'translate(-50%, -50%)', boxShadow: '0px 0px 50px #888888', zIndex: '50', overflow: 'auto', maxHeight: '100%'});
-    });
-    // onClick function for zoomImg
-    $('img.zoomImg').click(function() {
-      $('.zoomDiv').css({opacity: '0', width: '0%'}); 
-    });
-  });
-```
 
 First, we will organize the information in our data frame according to the accumulated recommendations for each treatment to observe differences between them. We will focus on the recommendations for each **crop (Rice and Banana)**.
 
@@ -62,7 +58,8 @@ let's start by loading the necessary libraries and the data frame.
 # Load the necessary libraries
 
 list_p <- c("tidyverse", "readxl", "soiltexture", 
-            "readr", "caret", "plotly")
+            "readr", "caret", "plotly", "ggsignif", 
+            "reactable")
 
 sapply(list_p, function(x) {
        if(!require(x, character.only = TRUE)) {
@@ -74,21 +71,14 @@ sapply(list_p, function(x) {
 FR_Plan <- read_excel("D:\\OneDrive - CGIAR\\Fertilize Right ADMIN\\ACTIVIDADES\\A3. LB Suelos\\Analisis/Fertilizacion.xlsx", 
                     na = c("null", NA), sheet = "Fertilizations") ## Fertilization plan for both crops
 FR_SL <- read_excel("D:\\OneDrive - CGIAR\\Fertilize Right ADMIN\\ACTIVIDADES\\A3. LB Suelos\\Analisis\\Suelos_LB.xlsx",
-                    na = c("null", NA)) ## Soil data analysis results for both crops
+                    na = c("null", NA), sheet = "Soil charactheristics") ## Soil data analysis results for both crops
 
 
 str(FR_Plan)
 summary(FR_Plan)
 ```
 
-Once we have our data uploaded, let's select the variables that we will implement for our analysis. In this case, we will focus on the **Treatment, Crop, and the Nutrient recommendations (N, P, and K)**.
-
-Lets select the data that we will use for our analysis.
-
-```{r}
-
-```
-
+Once we have our data uploaded, we will focus on the followed variables for our analysis: **Treatment, Crop, and the Nutrient recommendations (N, P, and K)**.
 
 ::: {.panel-tabset .nav-pills}
 ## Rice
@@ -104,26 +94,116 @@ Lets select the data that we will use for our analysis.
 FR_Plan |>
   filter(Cultivo == "Arroz") |>
   group_by(Finca, Tratamiento) |>
-  mutate(N_kg_ha = mean(`Aporte N (Kg/ha)`, na.rm = TRUE),
-         P_kg_ha = mean(`Aporte P (Kg/ha)`, na.rm = TRUE),
-         K_kg_ha = mean(`Aporte K (Kg/ha)`, na.rm = TRUE), 
-         Tratamiento = factor(Tratamiento, 
-                              levels = c("Convencional", "Optimizado", "Alternativo"))) |>
-  pivot_longer(cols = c(N_kg_ha, P_kg_ha, K_kg_ha),
-               names_to = "Variables", values_to = "Values") |>
-  ggplot(aes(x = Finca, y = Values, 
+  summarize(N = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+            P = sum(`Aporte P (Kg/ha)`, na.rm = TRUE),
+            K = sum(`Aporte K (Kg/ha)`, na.rm = TRUE),
+            .groups = "drop") |>
+  group_by(Tratamiento) |>
+  # Calculate the mean and standard deviation for each nutrient according to each treatment and farm application
+  summarize(N_mean = mean(N, na.rm = TRUE),
+            P_mean = mean(P, na.rm = TRUE),
+            K_mean = mean(K, na.rm = TRUE),
+            N_sd = sd(N, na.rm = TRUE),
+            P_sd = sd(P, na.rm = TRUE),
+            K_sd = sd(K, na.rm = TRUE),
+            .groups = "drop") |>
+  mutate(Tratamiento = case_when(
+    Tratamiento == "Convencional" ~ "Conventional", 
+    Tratamiento == "Optimizado" ~ "Optimized", 
+    Tratamiento == "Alternativo" ~ "Alternative",
+    TRUE ~ Tratamiento)) |>
+    pivot_longer(
+    cols = -Tratamiento,
+    names_to = c("Variable", ".value"),
+    names_sep = "_") |>
+    mutate(Tratamiento = factor(Tratamiento, 
+                              levels = c("Conventional", "Optimized", "Alternative")),
+         Variable = factor(Variable, levels = c("N", "P", "K"))) |>
+  ggplot(aes(x = Tratamiento, y = mean, 
              fill = Tratamiento)) +
-  geom_col(position = "dodge", width =  0.5) +
-  facet_wrap(~ Variables, scales = "free_y") +
+  geom_bar(stat = "identity", position = "dodge", 
+           width =  0.65, alpha = 0.65) +
+  geom_errorbar(aes(x = Tratamiento, ymin = mean - sd, ymax = mean + sd), 
+                width = 0.2, position = position_dodge(0.5), alpha = 0.65) +
+facet_wrap(~ Variable, 
+           labeller = labeller(Variable = c(N = "N",
+                                            P = "P2O5",
+                                            K = "K2O")), 
+           scales = "free_y") +
+  labs(y = expression("Kg/ha")) +
   scale_fill_manual(values = c("#F4A460", "#48D1CC", "#B0E0E6")) +
   guides(color = "none") +
   theme_light(base_size = 12) +
-  theme(axis.title.x = element_text(size = 8, face = "bold.italic"),
+  coord_cartesian(ylim = c(0, 220)) +
+  theme(legend.position = "none",
+        axis.title.x = element_text(size = 8, face = "bold.italic"),
         axis.title.y = element_text(size = 8, face = "bold.italic"),
         legend.title = element_text(size = 8, face = "bold"),
-        axis.text.x = element_text(size = 6, face = "bold"),
+        axis.text.x = element_text(size = 8, face = "bold", angle = 45, hjust = 1),
         strip.text = element_text(size = 8, face = "bold"))
-  
+
+```
+
+```{r}
+#| echo: false
+#| output: true
+#| warning: false
+#| message: false
+
+library(htmltools)
+
+div(
+  style = "display: flex; justify-content: center; width: 100%;",
+reactable(
+FR_Plan |>
+  filter(Cultivo == "Arroz") |>
+  group_by(Finca, Tratamiento) |>
+  summarize(N = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+            P = sum(`Aporte P (Kg/ha)`, na.rm = TRUE),
+            K = sum(`Aporte K (Kg/ha)`, na.rm = TRUE),
+            .groups = "drop") |>
+  mutate(Tratamiento = case_when(
+    Tratamiento == "Convencional" ~ "Conventional", 
+    Tratamiento == "Optimizado" ~ "Optimized", 
+    Tratamiento == "Alternativo" ~ "Alternative",
+    TRUE ~ Tratamiento)) |>
+  group_by(Tratamiento) |>
+  # Calculate the mean and standard deviation for each nutrient according to each treatment and farm application
+  summarize(N_mean = round(mean(N, na.rm = TRUE),2),
+            P_mean = round(mean(P, na.rm = TRUE),2),
+            K_mean = round(mean(K, na.rm = TRUE),2),
+            N_sd = round(sd(N, na.rm = TRUE),2),
+            P_sd = round(sd(P, na.rm = TRUE),2),
+            K_sd = round(sd(K, na.rm = TRUE),2),
+            .groups = "drop") |>
+    pivot_longer(
+    cols = -Tratamiento,
+    names_to = c("Variable", ".value"),
+    names_sep = "_") |>
+    mutate(Tratamiento = factor(Tratamiento,
+                              levels = c("Conventional", "Optimized", "Alternative")),
+         Variable = case_when(Variable == "P" ~ "P2O5",
+                              Variable == "K" ~ "K2O",
+                              TRUE ~ Variable)) |> 
+    set_names(c("Tratamiento", "Variable", "Kg/ha", "SD")),
+    # Organizing the table to show bellow the graph
+    fullWidth = FALSE,
+    width = "500px",
+    defaultColDef = colDef(cell = function(value) {
+                                  format(value, nsmall = 1)
+                                  }, 
+                    align = 'center', 
+                    minWidth = 70,
+                    headerStyle = list(background = '#C1CDCD')),
+    theme = reactableTheme(
+    style = list(fontFamily = "-system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif", 
+                 fontSize = 12)),
+    bordered = TRUE, 
+    highlight = TRUE,
+    columns = list("Kg/ha" = colDef(filterable = FALSE), 
+                   "SD" = colDef(filterable = FALSE)),
+    filterable = TRUE
+))
 
 ```
 
@@ -135,102 +215,463 @@ FR_Plan |>
 #| message: false
 #| warning: false
 
-# Plotting the data
-
 FR_Plan |>
   filter(Cultivo == "Banano") |>
-  group_by(Finca, Tratamiento) |>
-  mutate(N_kg_ha = mean(`Aporte N (Kg/ha)`, na.rm = TRUE),
-         P_kg_ha = mean(`Aporte P (Kg/ha)`, na.rm = TRUE),
-         K_kg_ha = mean(`Aporte K (Kg/ha)`, na.rm = TRUE), 
-         Tratamiento = factor(Tratamiento, 
-                              levels = c("Convencional", "Optimizado", "Alternativo"))) |>
-  pivot_longer(cols = c(N_kg_ha, P_kg_ha, K_kg_ha),
-               names_to = "Variables", values_to = "Values") |>
-  ggplot(aes(x = Variables, y = Values, 
-             fill = Tratamiento)) +
-  geom_col(position = "dodge", width =  0.5) +
-  facet_wrap(~ Variables, scales = "free_y") +
-  scale_fill_manual(values = c("#F4A460", "#48D1CC", "#B0E0E6")) +
+  group_by(Finca, Tratamiento, Estado) |>
+  summarize(N = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+            P = sum(`Aporte P (Kg/ha)`, na.rm = TRUE),
+            K = sum(`Aporte K (Kg/ha)`, na.rm = TRUE),
+            .groups = "drop") |>
+  group_by(Tratamiento, Estado) |>
+  # Calculate the mean and standard deviation for each nutrient according to each treatment and farm application
+  summarize(N_mean = mean(N, na.rm = TRUE),
+            P_mean = mean(P, na.rm = TRUE),
+            K_mean = mean(K, na.rm = TRUE),
+            .groups = "drop") |>
+  mutate(Tratamiento = case_when(
+    Tratamiento == "Convencional" ~ "Conventional", 
+    Tratamiento == "Optimizado" ~ "Optimized", 
+    Tratamiento == "Alternativo" ~ "Alternative",
+    TRUE ~ Tratamiento)) |>
+    pivot_longer(
+    cols = -c(Tratamiento, Estado),
+    names_to = c("Variable", ".value"),
+    names_sep = "_") |>
+    mutate(Tratamiento = factor(Tratamiento, 
+                              levels = c("Conventional", "Optimized", "Alternative")),
+           Variable = factor(Variable, levels = c("N", "P", "K")), 
+           Estado = factor(Estado, levels = c("Pendiente", "Aplicado"))) |>
+  na.omit() |>
+  ggplot(aes(x = Tratamiento, y = mean, 
+             fill = Estado)) +
+  geom_bar(stat = "identity", 
+           width =  0.65, alpha = 0.65) +
+  facet_wrap(~ Variable, 
+             labeller = labeller(Variable = c(N = "N",
+                                            P = "P2O5",
+                                            K = "K2O")), 
+             scales = "free_y") +
+  labs(y = expression("Kg/ha")) +
+  scale_fill_manual(values = c("#F4A460", "#48D1CC")) +
   guides(color = "none") +
   theme_light(base_size = 12) +
+  coord_cartesian(ylim = c(0, 500)) +
   theme(axis.title.x = element_text(size = 8, face = "bold.italic"),
         axis.title.y = element_text(size = 8, face = "bold.italic"),
         legend.title = element_text(size = 8, face = "bold"),
-        axis.text.x = element_text(size = 6, face = "bold"),
+        axis.text.x = element_text(size = 8, face = "bold", angle = 45, hjust = 1),
         strip.text = element_text(size = 8, face = "bold"))
+
+```
+
+```{r}
+#| echo: false
+#| output: true
+#| warning: false
+#| message: false
+
+div(
+  style = "display: flex; justify-content: center; width: 100%;",
+reactable(
+FR_Plan |>
+  filter(Cultivo == "Banano") |>
+  group_by(Finca, Tratamiento) |>
+  summarize(N = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+            P = sum(`Aporte P (Kg/ha)`, na.rm = TRUE),
+            K = sum(`Aporte K (Kg/ha)`, na.rm = TRUE),
+            .groups = "drop") |>
+  group_by(Tratamiento) |>
+  # Calculate the mean and standard deviation for each nutrient according to each treatment and farm application
+  summarize(N_mean = round(mean(N, na.rm = TRUE),2),
+            P_mean = round(mean(P, na.rm = TRUE),2),
+            K_mean = round(mean(K, na.rm = TRUE),2),
+            .groups = "drop") |>
+    pivot_longer(
+    cols = -Tratamiento,
+    names_to = c("Variable", ".value"),
+    names_sep = "_") |>
+    mutate(Tratamiento = factor(Tratamiento,
+                              levels = c("Convencional", "Optimizado", "Alternativo")),
+         Variable = case_when(Variable == "N" ~ "N",
+                              Variable == "P" ~ "P2O5",
+                              Variable == "K" ~ "K2O",
+                              TRUE ~ Variable)) |> 
+    set_names(c("Tratamiento", "Variable", "Kg/ha")),
+    # Organizing the table to show bellow the graph
+    fullWidth = FALSE,
+    width = "400px",
+    defaultColDef = colDef(cell = function(value) {
+                                  format(value, nsmall = 1)
+                                  }, 
+                    align = 'center', 
+                    minWidth = 70,
+                    headerStyle = list(background = '#C1CDCD')),
+    theme = reactableTheme(
+    style = list(fontFamily = "-system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif", 
+                 fontSize = 12)),
+    bordered = TRUE, 
+    highlight = TRUE,
+    columns = list(mean = colDef(filterable = FALSE), 
+                  filterable = TRUE)))
 
 ```
 :::
 
-Let's make an acummulative plot considering the nitrogen, phosphorus, and potassium applications for the rice crop.
+Once we have this information, let's calculate the relationship between the applied nitrogen and the available soil. For this process, we will need to organize a table containing the available nitrogen in the soil and the total applied to it to understand the relationship between them and the fulfillment of the requirements of the varieties implemented.
+
+```{r}
+#| echo: false
+#| output: false
+#| warning: false
+#| message: false
+
+# calculation of total nitrogen available in soil
+
+N_ava <- FR_SL |>
+         rename(Tratamiento = Trat,
+                Cultivo = Crop, 
+                Finca = Farm, 
+                `N Ava (kg/ha)` = "NAva") |>
+         mutate(Tratamiento = case_when(
+                Tratamiento == "Alternative" ~ "Alternativo", 
+                Tratamiento == "Conventional" ~ "Convencional", 
+                Tratamiento == "Optimized" ~ "Optimizado",
+                TRUE ~ Tratamiento), 
+                Cultivo = case_when(
+                Cultivo == "Banana" ~ "Banano", 
+                Cultivo == "Rice" ~ "Arroz", 
+                TRUE ~ Cultivo
+                )) |>
+         relocate(Tratamiento, .before = Cultivo) |>
+         group_by(Finca, Cultivo, Tratamiento, Depth) |>
+         summarize(`N Ava (kg/ha)` = round(mean(`N Ava (kg/ha)`), 2),
+                  .groups = "drop") |>
+         group_by(Finca, Cultivo, Tratamiento) |>
+         summarize(`N Ava (kg/ha)` = sum(`N Ava (kg/ha)`, na.rm = TRUE),
+                  .groups = "drop") |>
+         right_join(FR_Plan, by = c("Finca", "Cultivo", "Tratamiento")) # |>
+         # select(Finca, Cultivo, Tratamiento, Product, `N Ava (kg/ha)`, `Aporte N (Kg/ha)`)
+# 
+# N_ava |> 
+#      filter(Cultivo == "Arroz") |>
+#      mutate(Var_req  = case_when(
+#      Finca == "Farm_1" ~ 189,
+#      Finca == "Farm_2" ~ 189,
+#      TRUE ~ 166.50)) |> 
+#      group_by(Finca, Tratamiento) |>
+#      summarize(Napl = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+#                Navl = mean(`N Ava (kg/ha)`, na.rm = TRUE),
+#                Nreq = mean(Var_req, na.rm = TRUE),
+#                .groups = "drop") |>
+#      mutate(across(c(Napl, Navl), ~ . / Nreq * 100, .names = "{.col}_P")) |>
+#      pivot_longer(cols = c(Napl_P, Navl_P), 
+#                   names_to = c("Variable", ".value"),
+#                   names_sep = "_") |>
+#      mutate(Tratamiento = factor(Tratamiento, 
+#                                 levels = c("Convencional", "Optimizado", "Alternativo")),
+#             Tratamiento = recode(Tratamiento, 
+#                                  "Convencional" = "Con",
+#                                  "Optimizado" = "Opt",
+#                                  "Alternativo" = "Alt"),
+#             Finca = factor(Finca, levels =c("Farm_1", "Farm_2", "Farm_3")),
+#             Variable = factor(Variable, levels = c("Navl", "Napl"))) |> 
+#     # group_by(Tratamiento, Nreq, Variable) |>
+#     # summarize(P = mean(P, na.rm = TRUE), .groups = "drop") |>
+#      ggplot(aes(x = Tratamiento, y = P)) + 
+#      geom_bar(aes(fill = Variable), 
+#               stat = "identity", 
+#               width = 0.65, alpha = 0.65) + 
+#      geom_hline(yintercept = 100, linetype = "dashed", color = "#CD4F39") +
+#      facet_wrap(~ Finca, scales = "free_y") +
+#      labs(y = expression("%")) +
+#      scale_fill_manual(values = c("#48D1CC", "#CD4F39")) +
+#      guides(color = "none") +
+#      theme_light(base_size = 12) +
+#      coord_cartesian(ylim = c(0, 120)) +
+#      theme(axis.title.x = element_text(size = 8, face = "bold.italic"),
+#         axis.title.y = element_text(size = 8, face = "bold.italic"),
+#         legend.title = element_text(size = 8, face = "bold"),
+#         axis.text.x = element_text(size = 6, face = "bold"),
+#         strip.text = element_text(size = 8, face = "bold"))
+
+```
+
+Let's organize the dataset for each crop according to the requirements of the varieties implemented.
 
 ::: {.panel-tabset .nav-pills}
 ## Rice
 
 ```{r}
-#| echo: true
+#| echo: false
 #| output: true
 #| message: false
 #| warning: false
 
-FR_Plan |> 
-  filter(Cultivo == "Arroz") |>
-  mutate(DDS = as.numeric(DDS)) |>
-  arrange(Finca, Tratamiento, DDS) |>
-  group_by(Finca, Tratamiento, DDS) |>
-  summarize(Cum_N = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
-            Cum_P = sum(`Aporte P (Kg/ha)`, na.rm = TRUE),
-            Cum_K = sum(`Aporte K (Kg/ha)`, na.rm = TRUE)) |>
-  mutate(Cum_N = cumsum(Cum_N),
-         Cum_P = cumsum(Cum_P),
-         Cum_K = cumsum(Cum_K)) |>
-  pivot_longer(cols = c(Cum_N, Cum_P, Cum_K),
-               names_to = "Variables", values_to = "Values") |>
-  mutate(Variables = factor(Variables, levels = c("Cum_N", "Cum_P", "Cum_K"))) |>
-  ggplot(aes(x = DDS, y = Values, colour = Tratamiento)) +
-  geom_point(size = 2) +
-  geom_smooth(method = "loess", se = FALSE, span = 1, size = 1.2, na.rm = TRUE) +
-  facet_wrap(Finca ~ Variables, scales = "free_y") + 
-    scale_color_manual(values = c("Convencional" = "#F4A460", 
-                                "Optimizado" = "#48D1CC", 
-                                "Alternativo" = "#B0E0E6")) +
-  guides(color = guide_legend(title = "Tratamiento")) +
-  guides(color = "none") +
-  theme_light(base_size = 12) +
-  theme(legend.position = "right",
-        axis.title.x = element_text(size = 8, face = "bold.italic"),
+## Barplot with available and applied to the soil percentage
+
+Plot_1 <- suppressWarnings(FR_Plan |> 
+     filter(Cultivo == "Arroz") |>
+     group_by(Finca, Tratamiento, Product) |>
+     summarize("N_kg/ha" = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+            .groups = "drop") |>
+    mutate(Tratamiento = case_when(
+           Tratamiento == "Convencional" ~ "Conventional", 
+           Tratamiento == "Optimizado" ~ "Optimized", 
+           Tratamiento == "Alternativo" ~ "Alternative",
+    TRUE ~ Tratamiento)) |>
+    group_by(Tratamiento, Product) |>
+    summarize(`N_kg/ha` = mean(`N_kg/ha`, na.rm = TRUE),
+              .groups = "drop") |>
+    pivot_longer(
+    cols = -c(Tratamiento, Product),
+    names_to = c("Variable", ".value"),
+    names_sep = "_") |>
+    filter(`kg/ha` > 0) |>
+    na.omit() |>
+    mutate(Tratamiento = factor(Tratamiento, 
+                              levels = c("Conventional", "Optimized", "Alternative"))) |>
+     ggplot(aes(x = Tratamiento, y = `kg/ha`)) + 
+     geom_bar(aes(fill = Product), 
+              stat = "identity", 
+              width = 0.65, alpha = 0.65) + 
+     scale_fill_manual(values = c("#BCEE68", "#5F9EA0", "#009ACD", 
+                                  "#FFB90F", "#FF8C00")) +
+     guides(color = "none") +
+     theme_light(base_size = 12) +
+     coord_cartesian(ylim = c(0, 200)) + 
+     xlab("Treatment") +
+     theme(axis.title.x = element_text(size = 8, face = "bold.italic"),
         axis.title.y = element_text(size = 8, face = "bold.italic"),
         legend.title = element_text(size = 8, face = "bold"),
-        axis.text.x = element_text(size = 6, face = "bold"),
-        strip.text = element_text(size = 8, face = "bold"))
+        legend.text = element_text(size = 8), 
+        axis.text.x = element_text(size = 8, face = "bold", angle = 45, hjust = 1),
+        strip.text = element_text(size = 8, face = "bold")))
 
-# Aggregate nutrient contribution by product
-FR_Plan |>
-  filter(Cultivo == "Arroz") |>
-  group_by(Product) |>
-  mutate(Total_N = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
-            Total_P = sum(`Aporte P (Kg/ha)`, na.rm = TRUE),
-            Total_K = sum(`Aporte K (Kg/ha)`, na.rm = TRUE)) |>
-  pivot_longer(cols = c(Total_N, Total_P, Total_K),
-               names_to = "Nutrient", values_to = "Value") |>
-  mutate(Nutrient = factor(Nutrient, levels = c("Total_N", "Total_P", "Total_K"))) |> 
-  ggplot(aes(x = reorder(Product, Value), y = Value, fill = Nutrient)) +
-  geom_col(position = "dodge") +
-  facet_wrap(Tratamiento ~ Finca, scales = "free_y") +
-  coord_flip() +
-  scale_fill_manual(values = c("#FF6A6A", "#EE9572", "#9BCD9B")) +
-  labs(title = "Total Nutrient Contribution by Fertilizer Product",
-       x = "Fertilizer Product", y = "Total Nutrient (Kg/ha)") +
-  theme_minimal() + 
-  theme(legend.position = "right",
-        axis.title.x = element_text(size = 8, face = "bold.italic"),
+Plot_2 <- suppressWarnings(FR_Plan |> 
+     filter(Cultivo == "Arroz") |>
+     mutate(`N Fertilization type`  = case_when(
+     Product == "SAM" ~ "Traditional",
+     Product == "Triple 18" ~ "Traditional",
+     Product == "Urea" ~ "Traditional",
+     Product == "Nitroxtend XP-S" ~ "Enhanced urea", 
+     Product == "Microessentials" ~ "Traditional",
+     TRUE ~ Product)) |>
+     mutate(Tratamiento = case_when(
+           Tratamiento == "Convencional" ~ "Conventional", 
+           Tratamiento == "Optimizado" ~ "Optimized", 
+           Tratamiento == "Alternativo" ~ "Alternative",
+           TRUE ~ Tratamiento)) |>
+     group_by(Finca, Tratamiento, Product, `N Fertilization type`) |>
+    summarize("N_kg/ha" = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+            .groups = "drop") |>
+    group_by(Tratamiento, Product,`N Fertilization type`) |>
+    summarize(`N_kg/ha` = mean(`N_kg/ha`, na.rm = TRUE),
+              .groups = "drop") |>
+    pivot_longer(
+    cols = -c(Tratamiento, `N Fertilization type`),
+    names_to = c("Variable", ".value"),
+    names_sep = "_") |>
+    filter(`kg/ha` > 0) |>
+    na.omit() |>
+    mutate(Tratamiento = factor(Tratamiento, 
+                              levels = c("Conventional", "Optimized", "Alternative")),
+           `N Fertilization type` = factor(`N Fertilization type`, 
+                                           levels = c("Traditional", "Others", "Enhanced urea"))) |>
+     ggplot(aes(x = Tratamiento, y = `kg/ha`)) + 
+     geom_bar(aes(fill = `N Fertilization type`), 
+              stat = "identity", 
+              width = 0.65, alpha = 0.65) + 
+     scale_fill_manual(values = c("#48D1CC", "#CD4F39")) +
+     guides(color = "none") +
+     theme_light(base_size = 12) +
+     coord_cartesian(ylim = c(0, 200)) + 
+     xlab("Treatment") +
+     theme(axis.title.x = element_text(size = 8, face = "bold.italic"),
         axis.title.y = element_text(size = 8, face = "bold.italic"),
         legend.title = element_text(size = 8, face = "bold"),
-        axis.text.x = element_text(size = 6, face = "bold"),
-        strip.text = element_text(size = 8, face = "bold"))
+        legend.text = element_text(size = 8), 
+        axis.text.x = element_text(size = 8, face = "bold", angle = 45, hjust = 1),
+        strip.text = element_text(size = 8, face = "bold"))) 
 
+gridExtra::grid.arrange(Plot_1, Plot_2, nrow = 1)
 
+```
+
+```{r}
+#| echo: false
+#| output: false
+#| warning: false
+#| message: false
+
+suppressWarnings(
+  div(
+  style = "display: flex; justify-content: center; width: 100%;",
+reactable(
+ FR_Plan |> 
+     filter(Cultivo == "Arroz") |>
+     mutate(`Fertilization type`  = case_when(
+            Product == "SAM" ~ "Convencional",
+            Product == "Triple 18" ~ "Convencional",
+            Product == "Urea" ~ "Convencional",
+            Product == "Nitroxtend XP-S" ~ "Mejoradas", 
+            Product == "Microessentials" ~ "Mejoradas",
+     TRUE ~ Product)) |>
+     mutate(Tratamiento = case_when(
+            Tratamiento == "Convencional" ~ "Conventional", 
+            Tratamiento == "Optimizado" ~ "Optimized", 
+            Tratamiento == "Alternativo" ~ "Alternative",
+            TRUE ~ Tratamiento)) |>
+     group_by(Finca, Tratamiento, Product, `Fertilization type`) |>
+     summarize("N_kg/ha" = mean(`Aporte N (Kg/ha)`, na.rm = TRUE),
+            .groups = "drop") |> 
+    pivot_longer(
+    cols = -c(Tratamiento, Product, `Fertilization type`),
+    names_to = c("Variable", ".value"),
+    names_sep = "_") |>
+    filter(`kg/ha` > 0) |>
+    na.omit() |>
+    mutate(Tratamiento = factor(Tratamiento, 
+                              levels = c("Conventional", "Optimized", "Alternative"))),
+# Organizing the table to show bellow the graph
+    fullWidth = FALSE,
+    width = "400px",
+    defaultColDef = colDef(cell = function(value) {
+                                  format(value, nsmall = 1)
+                                  }, 
+                    align = 'center', 
+                    minWidth = 70,
+                    headerStyle = list(background = '#C1CDCD')),
+    theme = reactableTheme(
+    style = list(fontFamily = "-system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif", 
+                 fontSize = 12)),
+    bordered = TRUE, 
+    highlight = TRUE,
+    columns = list(Nreq = colDef(filterable = FALSE), 
+                   P = colDef(filterable = FALSE)),
+    filterable = TRUE
+)))
+
+```
+
+```{r}
+#| echo: false
+#| output: true
+#| warning: false
+#| message: false
+
+# Lets define the table according the NH4 and No3 levels, also we must include the total of nitrogen  applied
+
+suppressWarnings(
+  div(
+  style = "display: flex; justify-content: center; width: 100%;",
+reactable(
+ FR_Plan |> 
+     filter(Cultivo == "Arroz") |>
+     mutate(Tratamiento = case_when(
+            Tratamiento == "Convencional" ~ "Conventional", 
+            Tratamiento == "Optimizado" ~ "Optimized", 
+            Tratamiento == "Alternativo" ~ "Alternative",
+            TRUE ~ Tratamiento)) |>
+    group_by(Finca, Tratamiento) |>
+    summarize("NO3 (kg/ha)" = sum(`Aporte NO3 (kg/ha)`, na.rm = TRUE),
+              "NH4 (kg/ha)" = sum(`Aporte NH4 (kg/ha)`, na.rm = TRUE),
+              "N Total (kg/ha)" = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+              .groups = "drop") |>
+    group_by(Tratamiento) |>
+    summarize(`NO3 (kg/ha)` = mean(`NO3 (kg/ha)`, na.rm = TRUE),
+              `NH4 (kg/ha)` = mean(`NH4 (kg/ha)`, na.rm = TRUE),
+              `N Total (kg/ha)` = mean(`N Total (kg/ha)`, na.rm = TRUE),
+              .groups = "drop") |> 
+    mutate(Tratamiento = factor(Tratamiento, 
+                              levels = c("Conventional", "Optimized", "Alternative"))) |> 
+    arrange(Tratamiento) |> 
+    rename(Treatment = "Tratamiento"),
+# Organizing the table to show bellow the graph
+    fullWidth = FALSE,
+    width = "400px",
+    defaultColDef = colDef(cell = function(value) {
+                                  format(value, nsmall = 1)
+                                  }, 
+                    align = 'center', 
+                    minWidth = 70,
+                    headerStyle = list(background = '#C1CDCD')),
+    theme = reactableTheme(
+    style = list(fontFamily = "-system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif", 
+                 fontSize = 12)),
+    bordered = TRUE, 
+    highlight = TRUE,
+    columns = list(Nreq = colDef(filterable = FALSE), 
+                   P = colDef(filterable = FALSE)),
+    filterable = TRUE
+)))
+
+```
+
+```{r}
+#| echo: false
+#| output: false
+#| message: false
+#| warning: false
+#| fig-height: 2
+
+# Define a function to generate the pie chart for each farm
+# generate_pie <- function(farm) {
+#   N_ava |>
+#      filter(Cultivo == "Arroz", Finca == farm) |>
+#      mutate(Var_req  = case_when(
+#      Finca == "Farm_1" ~ 189,
+#      Finca == "Farm_2" ~ 189,
+#      TRUE ~ 166.50)) |>
+#      group_by(Finca, Tratamiento) |>
+#      summarize(Napl = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+#                Navl = mean(`N Ava (kg/ha)`, na.rm = TRUE),
+#                Nreq = mean(Var_req, na.rm = TRUE),
+#                .groups = "drop") |>
+#      mutate(across(c(Napl, Navl), ~ . / Nreq * 100, .names = "{.col}_P")) |>
+#      pivot_longer(cols = c(Napl_P, Navl_P),
+#                   names_to = c("Variable", ".value"),
+#                   names_sep = "_") |>
+#      mutate(Tratamiento = factor(Tratamiento,
+#                                 levels = c("Convencional", "Optimizado", "Alternativo")),
+#             Tratamiento = recode(Tratamiento,
+#                                  "Convencional" = "Con",
+#                                  "Optimizado" = "Opt",
+#                                  "Alternativo" = "Alt"),
+#             Finca = factor(Finca, levels =c("Farm_1", "Farm_2", "Farm_3")),
+#             Variable = factor(Variable, levels = c("Navl", "Napl")),
+#             P = round(P, 2)) |>
+#      ggplot(aes(x = "", y = P)) +
+#      geom_bar(aes(fill = Variable),
+#               stat = "identity",
+#               width = 0.65, alpha = 0.65) +
+#      coord_polar(theta = "y", start=0) +
+#      facet_wrap(~ Tratamiento, scales = "free_y") +
+#      labs(title = paste("Nitrogen % -", farm)) +
+#      scale_fill_manual(values = c("#48D1CC", "#CD4F39")) +
+#      guides(color = "none") +
+#      theme_classic(base_size = 12) +
+#      theme(axis.title.x = element_blank(),
+#         axis.title.y = element_blank(),
+#         legend.title = element_text(size = 8, face = "bold"),
+#         axis.text.x = element_blank(),
+#         axis.text.y = element_blank(),
+#         strip.text = element_text(size = 8, face = "bold"),
+#         axis.line=element_blank(),
+#         axis.ticks = element_blank()) +
+#      geom_text(aes(
+#      label=paste0(P,"%")),
+#      position=position_stack(vjust=0.5),
+#      size=3)
+# }
+# 
+# # Generate plots for each farm
+# pie_farm1 <- generate_pie("Farm_1")
+# pie_farm2 <- generate_pie("Farm_2")
+# pie_farm3 <- generate_pie("Farm_3")
+# 
+# pie_farm1
+# pie_farm2
+# pie_farm3
 
 ```
 
@@ -242,90 +683,549 @@ FR_Plan |>
 #| message: false
 #| warning: false
 
-FR_Plan |> 
-  filter(Cultivo == "Banano") |>
-  mutate(DDS = as.numeric(DDS)) |>
-  arrange(Finca, Tratamiento, DDS) |>
-  group_by(Finca, Tratamiento, DDS) |>
-  summarize(Cum_N = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
-            Cum_P = sum(`Aporte P (Kg/ha)`, na.rm = TRUE),
-            Cum_K = sum(`Aporte K (Kg/ha)`, na.rm = TRUE)) |>
-  mutate(Cum_N = cumsum(Cum_N),
-         Cum_P = cumsum(Cum_P),
-         Cum_K = cumsum(Cum_K)) |>
-  pivot_longer(cols = c(Cum_N, Cum_P, Cum_K),
-               names_to = "Variables", values_to = "Values") |>
-  mutate(Variables = factor(Variables, levels = c("Cum_N", "Cum_P", "Cum_K"))) |>
-  ggplot(aes(x = DDS, y = Values, colour = Tratamiento)) +
-  geom_point(size = 2) +
-  geom_smooth(method = "loess", se = FALSE, span = 1, size = 1.2, na.rm = TRUE) +
-  facet_wrap(Finca ~ Variables, scales = "free_y") + 
-    scale_color_manual(values = c("Convencional" = "#F4A460", 
-                                "Optimizado" = "#48D1CC", 
-                                "Alternativo" = "#B0E0E6")) +
-  guides(color = guide_legend(title = "Tratamiento")) +
-  guides(color = "none") +
-  theme_light(base_size = 12) +
-  theme(legend.position = "right",
-        axis.title.x = element_text(size = 8, face = "bold.italic"),
+
+suppressWarnings(FR_Plan |> 
+     filter(Cultivo == "Banano") |>
+     group_by(Finca, Tratamiento, Product) |>
+     summarize("N_kg/ha" = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+            .groups = "drop") |>
+    group_by(Tratamiento, Product) |>
+    summarize(`N_kg/ha` = mean(`N_kg/ha`, na.rm = TRUE),
+              .groups = "drop") |>
+    pivot_longer(
+    cols = -c(Tratamiento, Product),
+    names_to = c("Variable", ".value"),
+    names_sep = "_") |>
+    filter(`kg/ha` > 0) |>
+    na.omit() |>
+    mutate(Tratamiento = factor(Tratamiento, 
+                              levels = c("Convencional", "Optimizado", "Alternativo"))) |>
+     ggplot(aes(x = Tratamiento, y = `kg/ha`)) + 
+     geom_bar(aes(fill = Product), 
+              stat = "identity", 
+              width = 0.40, alpha = 0.65) + 
+     scale_fill_manual(values = c("#BCEE68", "#5F9EA0", "#009ACD", 
+                                  "#FFB90F", "#FF8C00")) +
+     xlab("Treatment") +
+     guides(color = "none") +
+     theme_light(base_size = 12) +
+     # coord_cartesian(ylim = c(0, 350)) + 
+     theme(axis.title.x = element_text(size = 8, face = "bold.italic"),
         axis.title.y = element_text(size = 8, face = "bold.italic"),
         legend.title = element_text(size = 8, face = "bold"),
-        axis.text.x = element_text(size = 6, face = "bold"),
-        strip.text = element_text(size = 8, face = "bold"))
+        axis.text.x = element_text(size = 8, face = "bold", angle = 45, hjust = 1),
+        strip.text = element_text(size = 8, face = "bold")))
 
-# Aggregate nutrient contribution by product
-FR_Plan |>
-  filter(Cultivo == "Banano") |>
-  group_by(Product) |>
-  summarize(Total_N = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
-            Total_P = sum(`Aporte P (Kg/ha)`, na.rm = TRUE),
-            Total_K = sum(`Aporte K (Kg/ha)`, na.rm = TRUE)) |>
-  pivot_longer(cols = c(Total_N, Total_P, Total_K),
-               names_to = "Nutrient", values_to = "Value") |>
-  mutate(Nutrient = factor(Nutrient, levels = c("Total_N", "Total_P", "Total_K"))) |> 
-  ggplot(aes(x = reorder(Product, Value), y = Value, fill = Nutrient)) +
-  geom_col(position = "dodge") +
-  coord_flip() +
-  scale_fill_manual(values = c("#FF6A6A", "#EE9572", "#9BCD9B")) +
-  labs(title = "Total Nutrient Contribution by Fertilizer Product",
-       x = "Fertilizer Product", y = "Total Nutrient (Kg/ha)") +
-  theme_minimal() + 
-  theme(legend.position = "right",
-        axis.title.x = element_text(size = 8, face = "bold.italic"),
-        axis.title.y = element_text(size = 8, face = "bold.italic"),
-        legend.title = element_text(size = 8, face = "bold"),
-        axis.text.x = element_text(size = 6, face = "bold"),
-        strip.text = element_text(size = 8, face = "bold"))
+```
+
+```{r}
+#| echo: false
+#| output: true
+#| warning: false
+#| message: false
+
+suppressWarnings(
+  div(
+  style = "display: flex; justify-content: center; width: 100%;",
+
+reactable(
+ FR_Plan |> 
+     filter(Cultivo == "Banano") |>
+     mutate(Tratamiento = case_when(
+            Tratamiento == "Convencional" ~ "Conventional", 
+            Tratamiento == "Optimizado" ~ "Optimized", 
+            Tratamiento == "Alternativo" ~ "Alternative",
+            TRUE ~ Tratamiento)) |>
+    group_by(Finca, Tratamiento) |>
+    summarize("NO3 (kg/ha)" = sum(`Aporte NO3 (kg/ha)`, na.rm = TRUE),
+              "NH4 (kg/ha)" = sum(`Aporte NH4 (kg/ha)`, na.rm = TRUE),
+              "N Total (kg/ha)" = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+              .groups = "drop") |>
+    group_by(Tratamiento) |>
+    summarize(`NO3 (kg/ha)` = mean(`NO3 (kg/ha)`, na.rm = TRUE),
+              `NH4 (kg/ha)` = mean(`NH4 (kg/ha)`, na.rm = TRUE),
+              `N Total (kg/ha)` = mean(`N Total (kg/ha)`, na.rm = TRUE),
+              .groups = "drop") |> 
+    mutate(Tratamiento = factor(Tratamiento, 
+                              levels = c("Conventional", "Optimized", "Alternative"))) |> 
+    arrange(Tratamiento) |> 
+    rename(Treatment = "Tratamiento"),
+# Organizing the table to show bellow the graph
+    fullWidth = FALSE,
+    width = "400px",
+    defaultColDef = colDef(cell = function(value) {
+                                  format(value, nsmall = 1)
+                                  }, 
+                    align = 'center', 
+                    minWidth = 70,
+                    headerStyle = list(background = '#C1CDCD')),
+    theme = reactableTheme(
+    style = list(fontFamily = "-system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif", 
+                 fontSize = 12)),
+    bordered = TRUE, 
+    highlight = TRUE,
+    columns = list(Nreq = colDef(filterable = FALSE), 
+                   P = colDef(filterable = FALSE)),
+    filterable = TRUE
+)))
+
+```
 
 
+```{r}
+#| echo: false
+#| output: false
+#| message: false
+#| warning: false
+#| fig-height: 2
+
+# # Define a function to generate the pie chart for each farm
+# generate_pie <- function(farm) {
+#   N_ava |> 
+#      filter(Cultivo == "Banano", Finca == farm) |>
+#      mutate(Var_req  = case_when(
+#      Finca == "Farm_1" ~ 321,
+#      Finca == "Farm_2" ~ 321,
+#      TRUE ~ 321)) |> 
+#      group_by(Finca, Tratamiento) |>
+#      summarize(Napl = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+#                Navl = mean(`N Ava (kg/ha)`, na.rm = TRUE),
+#                Nreq = mean(Var_req, na.rm = TRUE),
+#                .groups = "drop") |>
+#      mutate(across(c(Napl, Navl), ~ . / Nreq * 100, .names = "{.col}_P")) |>
+#      pivot_longer(cols = c(Napl_P, Navl_P), 
+#                   names_to = c("Variable", ".value"),
+#                   names_sep = "_") |>
+#      mutate(Tratamiento = factor(Tratamiento, 
+#                                 levels = c("Convencional", "Optimizado", "Alternativo")),
+#             Tratamiento = recode(Tratamiento, 
+#                                  "Convencional" = "Con",
+#                                  "Optimizado" = "Opt",
+#                                  "Alternativo" = "Alt"),
+#             Finca = factor(Finca, levels =c("Farm_1", "Farm_2", "Farm_3")),
+#             Variable = factor(Variable, levels = c("Navl", "Napl")), 
+#             P = round(P, 2)) |> 
+#      ggplot(aes(x = "", y = P)) + 
+#      geom_bar(aes(fill = Variable), 
+#               stat = "identity", 
+#               width = 0.65, alpha = 0.65) + 
+#      coord_polar(theta = "y", start=0) +  
+#      facet_wrap(~ Tratamiento, scales = "free_y") +
+#      labs(title = paste("Nitrogen % -", farm)) +
+#      scale_fill_manual(values = c("#48D1CC", "#CD4F39")) +
+#      guides(color = "none") +
+#      theme_classic(base_size = 12) +
+#      theme(axis.title.x = element_blank(),
+#         axis.title.y = element_blank(),
+#         legend.title = element_text(size = 8, face = "bold"),
+#         axis.text.x = element_blank(),
+#         axis.text.y = element_blank(),
+#         strip.text = element_text(size = 8, face = "bold"), 
+#         axis.line=element_blank(), 
+#         axis.ticks = element_blank()) + 
+#      geom_text(aes(
+#      label=paste0(P,"%")), 
+#      position=position_stack(vjust=0.5), 
+#      size=3)
+# }
+# 
+# # Generate plots for each farm
+# pie_farm1 <- generate_pie("Farm_1")
+# pie_farm2 <- generate_pie("Farm_2")
+# pie_farm3 <- generate_pie("Farm_3")
+# 
+# pie_farm1
+# pie_farm2
+# pie_farm3
 
 ```
 :::
 
+Now that we have differentiate the nutrient application levels by each crop, lets evaluate the different level of soil fertilizers applications.
+
+::: {.panel-tabset .nav-pills}
+## Arroz
+
 ```{r}
-#| echo: true
+#| echo: false
 #| output: true
 #| message: false
 #| warning: false
 
-# library(ggtern)  # Special package for ternary plots
-# 
-# # Prepare data for ternary plot
-# FR_Plan |>
-#   filter(!is.na(`Aporte N (Kg/ha)`), 
-#          !is.na(`Aporte P (Kg/ha)`), 
-#          !is.na(`Aporte K (Kg/ha)`)) |>
-#   mutate(Total_NPK = `Aporte N (Kg/ha)` + `Aporte P (Kg/ha)` + `Aporte K (Kg/ha)`,
-#          N_Ratio = `Aporte N (Kg/ha)` / Total_NPK,
-#          P_Ratio = `Aporte P (Kg/ha)` / Total_NPK,
-#          K_Ratio = `Aporte K (Kg/ha)` / Total_NPK) |>
-#   ggtern(aes(x = N_Ratio, y = P_Ratio, z = K_Ratio, color = Tratamiento)) +
-#   geom_point(size = 3) +
-#   labs(title = "Ternary Plot of NPK Fertilization",
-#        x = "Nitrogen Ratio", y = "Phosphorus Ratio", z = "Potassium Ratio") +
-#   theme_minimal() +
-#   scale_color_manual(values = c("Convencional" = "#F4A460", 
-#                                 "Optimizado" = "#48D1CC", 
-#                                 "Alternativo" = "#B0E0E6"))
+## Disponibilidad acorde requerimiento promedio
+N_ava |> 
+     filter(Cultivo == "Arroz") |>
+     mutate(Var_req  = case_when(
+     Finca == "Farm_1" ~ 189,
+     Finca == "Farm_2" ~ 189,
+     TRUE ~ 166.50)) |>
+     mutate(Tratamiento = case_when(
+            Tratamiento == "Convencional" ~ "Conventional", 
+            Tratamiento == "Optimizado" ~ "Optimized", 
+            Tratamiento == "Alternativo" ~ "Alternative",
+            TRUE ~ Tratamiento)) |>
+     group_by(Finca, Tratamiento) |>
+     summarize(Napl = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+               Navl = mean(`N Ava (kg/ha)`, na.rm = TRUE),
+               Nreq = mean(Var_req, na.rm = TRUE),
+               .groups = "drop") |>
+    filter(Napl > 0) |>
+    group_by(Tratamiento) |>
+    summarize(Napl = mean(Napl),    # Total sum per Tratamiento
+              Navl = sum(Navl),    # Total sum per Tratamiento
+              .groups = "drop") |>
+    pivot_longer(cols = -c(Tratamiento),
+                 names_to = c("Variable"),
+                 values_to = "kg/ha") |> 
+     mutate(Tratamiento = factor(Tratamiento,
+                                levels = c("Conventional", "Optimized", "Alternative")), 
+            Variable = factor(Variable, 
+                              levels = c("Navl", "Napl"))) |>
+     ggplot(aes(x = Tratamiento, y = `kg/ha`)) +
+     geom_bar(aes(fill = Variable), stat = "identity",
+              width = .45, alpha = 0.65, position = "dodge") +
+     geom_hline(yintercept = 170, linetype = "dashed", color = "#CD4F39") +
+     scale_fill_manual(name = "Nitrogen", 
+                       labels = c("Available", "Applied"),
+                       values = c("#FF8C00", "#48D1CC")) +
+     xlab("Treatment") +
+     guides(color = "none") +
+     theme_light(base_size = 12) +
+     coord_cartesian(ylim = c(0, 250)) +
+    # facet_wrap(~ Finca, scales = "free_y") +
+     theme(axis.title.x = element_text(size = 8, face = "bold.italic"),
+        axis.title.y = element_text(size = 8, face = "bold.italic"),
+        legend.title = element_text(size = 8, face = "bold"),
+        axis.text.x = element_text(size = 8, face = "bold", angle = 45, hjust = 1),
+        strip.text = element_text(size = 8, face = "bold"))
 
 ```
+
+```{r}
+#| echo: false
+#| output: false
+#| message: false
+#| warning: false
+
+## Disponibilidad acorde requerimiento promedio
+N_ava |> 
+     filter(Cultivo == "Arroz") |>
+     mutate(Var_req  = case_when(
+     Finca == "Farm_1" ~ 189,
+     Finca == "Farm_2" ~ 189,
+     TRUE ~ 166.50)) |>
+     mutate(Tratamiento = case_when(
+            Tratamiento == "Convencional" ~ "Conventional", 
+            Tratamiento == "Optimizado" ~ "Optimized", 
+            Tratamiento == "Alternativo" ~ "Alternative",
+            TRUE ~ Tratamiento)) |>
+     group_by(Finca, Tratamiento, Product) |>
+     summarize(Napl = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+               Navl = mean(`N Ava (kg/ha)`, na.rm = TRUE),
+               Nreq = mean(Var_req, na.rm = TRUE),
+               .groups = "drop") |>
+    filter(Napl > 0) |>
+    mutate(across(c(Napl), ~ . / Nreq * 100, .names = "{.col}_P")) |>
+    pivot_longer(cols = c(Napl_P),
+                  names_to = c("Variable", ".value"),
+                  names_sep = "_") |> 
+     mutate(Tratamiento = factor(Tratamiento,
+                                levels = c("Conventional", "Optimized", "Alternative")),
+            Tratamiento = recode(Tratamiento,
+                                 "Convencional" = "Con",
+                                 "Optimizado" = "Opt",
+                                 "Alternativo" = "Alt"),
+            Finca = factor(Finca, levels =c("Farm_1", "Farm_2", "Farm_3"))) |>
+     ggplot(aes(x = Tratamiento, y = P)) +
+     geom_bar(aes(fill = Product),
+              stat = "identity",
+              width = 0.65, alpha = 0.65) +
+     geom_hline(yintercept = 100, linetype = "dashed", color = "#CD4F39") +
+     facet_wrap(~ Finca, scales = "free_y") +
+     labs(y = expression("%")) +
+     scale_fill_manual(values = c("#48D1CC", "#668B8B", "#009ACD", "#8DB6CD", "#BCD2EE")) +
+     guides(color = "none") +
+     theme_light(base_size = 12) +
+     coord_cartesian(ylim = c(0, 120)) +
+     theme(axis.title.x = element_text(size = 8, face = "bold.italic"),
+        axis.title.y = element_text(size = 8, face = "bold.italic"),
+        legend.title = element_text(size = 8, face = "bold"),
+        axis.text.x = element_text(size = 6, face = "bold"),
+        strip.text = element_text(size = 8, face = "bold"))
+
+```
+
+```{r}
+#| echo: false
+#| output: false
+#| warning: false
+#| message: false
+
+library(reactable)
+div(
+  style = "display: flex; justify-content: center; width: 100%;",
+  
+reactable(
+N_ava |> 
+     filter(Cultivo == "Arroz") |>
+     mutate(Var_req  = case_when(
+     Finca == "Farm_1" ~ 189,
+     Finca == "Farm_2" ~ 189,
+     TRUE ~ 166.50)) |>
+     group_by(Finca, Tratamiento, Product) |>
+     summarize(Napl = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+               Navl = mean(`N Ava (kg/ha)`, na.rm = TRUE),
+               Nreq = mean(Var_req, na.rm = TRUE),
+               .groups = "drop") |>
+    filter(Napl > 0) |>
+    mutate(across(c(Napl), ~ . / Nreq * 100, .names = "{.col}_P")) |>
+    pivot_longer(cols = c(Napl_P),
+                  names_to = c("Variable", ".value"),
+                  names_sep = "_") |> 
+     mutate(Tratamiento = factor(Tratamiento,
+                                levels = c("Convencional", "Optimizado", "Alternativo")),
+            Tratamiento = recode(Tratamiento,
+                                 "Convencional" = "Con",
+                                 "Optimizado" = "Opt",
+                                 "Alternativo" = "Alt"),
+            Finca = factor(Finca, levels =c("Farm_1", "Farm_2", "Farm_3"))) |> 
+  select(Finca, Tratamiento, Product, P),
+# Organizing the table to show bellow the graph
+    fullWidth = FALSE,
+    width = "400px",
+    defaultColDef = colDef(cell = function(value) {
+                                  format(value, nsmall = 1)
+                                  }, 
+                    align = 'center', 
+                    minWidth = 70,
+                    headerStyle = list(background = '#C1CDCD')),
+    theme = reactableTheme(
+    style = list(fontFamily = "-system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif", 
+                 fontSize = 12)),
+    bordered = TRUE, 
+    highlight = TRUE,
+    columns = list(Nreq = colDef(filterable = FALSE), 
+                   P = colDef(filterable = FALSE)),
+    filterable = TRUE
+))
+
+```
+
+## Banano
+
+```{r}
+#| echo: false
+#| output: true
+#| message: false
+#| warning: false
+
+N_ava |> 
+     filter(Cultivo == "Banano") |>
+     mutate(Var_req  = case_when(
+     Finca == "Farm_1" ~ 321,
+     Finca == "Farm_2" ~ 321,
+     TRUE ~ 321)) |>
+     mutate(Tratamiento = case_when(
+            Tratamiento == "Convencional" ~ "Conventional", 
+            Tratamiento == "Optimizado" ~ "Optimized", 
+            Tratamiento == "Alternativo" ~ "Alternative",
+            TRUE ~ Tratamiento)) |>
+      group_by(Finca, Tratamiento) |>
+     summarize(Napl = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+               Navl = mean(`N Ava (kg/ha)`, na.rm = TRUE),
+               Nreq = mean(Var_req, na.rm = TRUE),
+               .groups = "drop") |>
+    filter(Napl > 0) |>
+    group_by(Tratamiento) |>
+    summarize(Napl = mean(Napl),    # Total sum per Tratamiento
+              Navl = mean(Navl),    # Total sum per Tratamiento
+              .groups = "drop") |>
+    pivot_longer(cols = -c(Tratamiento),
+                 names_to = c("Variable"),
+                 values_to = "kg/ha") |> 
+     mutate(Tratamiento = factor(Tratamiento,
+                                levels = c("Conventional", "Optimized", "Alternative")), 
+            Variable = factor(Variable, 
+                              levels = c("Navl", "Napl"))) |>
+     ggplot(aes(x = Tratamiento, y = `kg/ha`)) +
+     geom_bar(aes(fill = Variable),stat = "identity",
+              width = 0.45, alpha = 0.65, position = "dodge") +
+     geom_hline(yintercept = 321, linetype = "dashed", color = "#CD4F39") +
+     scale_fill_manual(name = "Nitrogen", 
+                       labels = c("Available", "Applied"),
+                       values = c("#FF8C00", "#48D1CC")) +
+     xlab("Treatment") +
+     guides(color = "none") +
+     theme_light(base_size = 12) +
+     coord_cartesian(ylim = c(0, 400)) +
+     # facet_wrap(~ Finca, scales = "free_y") +
+     theme(axis.title.x = element_text(size = 8, face = "bold.italic"),
+        axis.title.y = element_text(size = 8, face = "bold.italic"),
+        legend.title = element_text(size = 8, face = "bold"),
+        axis.text.x = element_text(size = 8, face = "bold", angle = 45, hjust = 1),
+        strip.text = element_text(size = 8, face = "bold"))
+
+```
+
+```{r}
+#| echo: false
+#| output: false
+#| warning: false
+#| message: false
+
+div(
+  style = "display: flex; justify-content: center; width: 100%;",
+reactable(
+N_ava |> 
+     filter(Cultivo == "Banano") |>
+     mutate(Var_req  = case_when(
+     Finca == "Farm_1" ~ 321,
+     Finca == "Farm_2" ~ 321,
+     TRUE ~ 321)) |>
+     group_by(Finca, Tratamiento, Product) |>
+     summarize(Napl = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+               Navl = mean(`N Ava (kg/ha)`, na.rm = TRUE),
+               Nreq = mean(Var_req, na.rm = TRUE),
+               .groups = "drop") |>
+    filter(Napl > 0) |>
+    mutate(across(c(Napl), ~ . / Nreq * 100, .names = "{.col}_P")) |>
+    pivot_longer(cols = c(Napl_P),
+                  names_to = c("Variable", ".value"),
+                  names_sep = "_") |> 
+     mutate(Tratamiento = factor(Tratamiento,
+                                levels = c("Convencional", "Optimizado", "Alternativo")),
+            Tratamiento = recode(Tratamiento,
+                                 "Convencional" = "Con",
+                                 "Optimizado" = "Opt",
+                                 "Alternativo" = "Alt"),
+            Finca = factor(Finca, levels =c("Farm_1", "Farm_2", "Farm_3"))) |> 
+  select(Finca, Tratamiento, Product, P),
+# Organizing the table to show bellow the graph
+    fullWidth = FALSE,
+    width = "400px",
+    defaultColDef = colDef(cell = function(value) {
+                                  format(value, nsmall = 1)
+                                  }, 
+                    align = 'center', 
+                    minWidth = 70,
+                    headerStyle = list(background = '#C1CDCD')),
+    theme = reactableTheme(
+    style = list(fontFamily = "-system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif", 
+                 fontSize = 12)),
+    bordered = TRUE, 
+    highlight = TRUE,
+    columns = list(Nreq = colDef(filterable = FALSE), 
+                   P = colDef(filterable = FALSE)),
+    filterable = TRUE
+))
+```
+:::
+
+Let's generate a timeline representing the fertilization dates in each farm and crop.
+
+## Arroz
+
+:::{.panel-tabset .nav-pills}
+
+## Farm 1
+
+```{r}
+#| echo: false
+#| output: true
+#| message: false
+#| warning: false
+
+library(png)
+library(grid)
+
+Rce_img <- readPNG("D:\\OneDrive - CGIAR\\Fetilize right projects\\Rice\\Images\\Rice growht.png")
+bg_g <- rasterGrob(Rce_img, width = unit(1, "npc"), height = unit(1, "npc"))
+
+FR_Plan |>
+  filter(Cultivo == "Arroz" & Finca == "Farm_1") |>
+   mutate(Activity = factor(Activity),                # make sure Activity is a factor
+         y = as.numeric(Activity)) |>
+  ggplot(aes(x = DDS, y = y)) +
+  annotation_custom(bg_g, xmin = 1, xmax = 10, ymin = -4, ymax = 6) +
+  geom_segment(aes(x = DDS, xend = DDS, y = 0, yend = y), 
+               linetype = "dotted", color = "deeppink", size = 0.7) +
+  geom_point(aes(color = Activity), size = 4) + 
+  # geom_vline(aes(xintercept = DDS, color = "red"),
+             # linetype = "dotted", size = 0.7, show.legend = FALSE) +
+  scale_y_continuous(breaks = NULL) +
+    labs(x = "DDS", y = NULL, title = "Fertilization Timeline - Farm_1") +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 8, face = "bold.italic"),
+        axis.title.x = element_text(size = 8, face = "bold.italic"),
+        axis.title.y = element_text(size = 8, face = "bold.italic"),
+        legend.title = element_text(size = 8, face = "bold"),
+        legend.text = element_text(size = 8), 
+        axis.text.x = element_text(size = 8, face = "bold", angle = 45, hjust = 1),
+        strip.text = element_text(size = 8, face = "bold"))
+```
+
+## Farm 2
+
+```{r}
+#| echo: false
+#| output: true
+#| message: false
+#| warning: false
+
+FR_Plan |>
+  filter(Cultivo == "Arroz" & Finca == "Farm_2") |>
+   mutate(Activity = factor(Activity),                # make sure Activity is a factor
+         y = as.numeric(Activity)) |>
+  ggplot(aes(x = DDS, y = y)) +
+  annotation_custom(bg_g, xmin = 1, xmax = 8, ymin = -3.5, ymax = 5) +
+  geom_segment(aes(x = DDS, xend = DDS, y = 0, yend = y), 
+               linetype = "dotted", color = "deeppink", size = 0.7) +
+  geom_point(aes(color = Activity), size = 4) + 
+  # geom_vline(aes(xintercept = DDS, color = "red"),
+             # linetype = "dotted", size = 0.7, show.legend = FALSE) +
+  scale_y_continuous(breaks = NULL) +
+    labs(x = "DDS", y = NULL, title = "Fertilization Timeline - Farm_2") +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 8, face = "bold.italic"),
+        axis.title.x = element_text(size = 8, face = "bold.italic"),
+        axis.title.y = element_text(size = 8, face = "bold.italic"),
+        legend.title = element_text(size = 8, face = "bold"),
+        legend.text = element_text(size = 8), 
+        axis.text.x = element_text(size = 8, face = "bold", angle = 45, hjust = 1),
+        strip.text = element_text(size = 8, face = "bold"))
+```
+
+## Farm 3
+
+```{r}
+#| echo: false
+#| output: true
+#| message: false
+#| warning: false
+
+FR_Plan |>
+  filter(Cultivo == "Arroz" & Finca == "Farm_3") |>
+   mutate(Activity = factor(Activity),                # make sure Activity is a factor
+         y = as.numeric(Activity)) |>
+  ggplot(aes(x = DDS, y = y)) +
+  annotation_custom(bg_g, xmin = 1, xmax = 10, ymin = -3.5, ymax = 5) +
+  geom_segment(aes(x = DDS, xend = DDS, y = 0, yend = y), 
+               linetype = "dotted", color = "deeppink", size = 0.7) +
+  geom_point(aes(color = Activity), size = 4) + 
+  # geom_vline(aes(xintercept = DDS, color = "red"),
+             # linetype = "dotted", size = 0.7, show.legend = FALSE) +
+  scale_y_continuous(breaks = NULL) +
+    labs(x = "DDS", y = NULL, title = "Fertilization Timeline - Farm_3") +
+  theme_minimal(base_size = 12) +
+  theme(axis.title = element_text(size = 8, face = "bold.italic"),
+        axis.title.x = element_text(size = 8, face = "bold.italic"),
+        axis.title.y = element_text(size = 8, face = "bold.italic"),
+        legend.title = element_text(size = 8, face = "bold"),
+        legend.text = element_text(size = 8), 
+        axis.text.x = element_text(size = 8, face = "bold", angle = 45, hjust = 1),
+        strip.text = element_text(size = 8, face = "bold"))
+```
+
+:::
+
+
