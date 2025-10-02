@@ -1,0 +1,100 @@
+---
+title: "Fertilice Right yield"
+title-block-banner: true
+date: today
+number-sections: true
+format:
+   html:
+    include-in-header:
+      - text: |
+          <script src = "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js""></script>
+          <script type="text/javascript">
+            $(document).ready(function() {
+              $('body').prepend('<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>');
+              // onClick function for all plots (img's)
+              $('img:not(.zoomImg)').click(function() {
+                $('.zoomImg').attr('src', $(this).attr('src')).css({width: '100%'});
+                $('.zoomDiv').css({opacity: '1', width: 'auto', border: '1px solid white', borderRadius: '5px', position: 'fixed', top: '50%', left: '50%', marginRight: '-50%', transform: 'translate(-50%, -50%)', boxShadow: '0px 0px 50px #888888', zIndex: '50', overflow: 'auto', maxHeight: '100%'});
+              });
+              // onClick function for zoomImg
+              $('img.zoomImg').click(function() {
+                $('.zoomDiv').css({opacity: '0', width: '0%'}); 
+              });
+            });
+          </script>
+    toc: true
+    toc-location: left
+    toc-expand: 3
+    number-sections: true
+    number-depth: 3
+    theme: cosmo
+    df-print: paged
+    code-fold: true 
+    output-fold: true
+editor: visual
+---
+
+Calling the required libraries
+
+```{r}
+#| echo: false
+#| output: false
+#| warning: false
+#| message: false
+
+list_p <- c("tidyverse", "readxl", "soiltexture", 
+            "readr", "caret", "plotly", "ggsignif", 
+            "reactable")
+
+sapply(list_p, function(x) {
+       if(!require(x, character.only = TRUE)) {
+         install.packages(x, dependencies = TRUE)
+         library(x, character.only = TRUE)
+       }
+       })
+```
+
+Uploading the required information
+
+```{r}
+#| echo: false
+#| message: fasle
+#| output: false
+#| warning: false
+
+FR_yield <- read_excel("D:\\OneDrive - CGIAR\\Fertilize Right ADMIN\\ACTIVIDADES\\A3. LB Suelos\\Analisis/Rendimientos.xlsx", 
+                       na = c("null", NA), sheet = "Sheet1") |>
+            dplyr::select(Finca, Tratamiento, Variedad, 
+                          Rendimiento_kg_ha...7, "% Granos_llenos", "%Vaneamiento") |> 
+            mutate(Tratamiento = factor(Tratamiento, levels = c("Convencional", "Optimizado", "Alternativo"))) |>
+            rename(Yield = "Rendimiento_kg_ha...7") |>
+            as.data.frame()
+
+
+```
+
+Let's get the statistics table to observe the differences between the treatments
+
+```{r}
+#| echo: false
+#| message: fasle
+#| output: false
+#| warning: false
+
+FR_yield |> 
+    group_by(Tratamiento) |> 
+    summarize(
+        "%_llenos" = mean(`% Granos_llenos`, na.rm = TRUE), 
+        "%_llenos_sd" = sd(`% Granos_llenos`, na.rm = TRUE),
+        "%_vaneados" = mean(`%Vaneamiento`, na.rm = TRUE),
+        "%_vaneados_sd" = sd(`%Vaneamiento`, na.rm = TRUE), 
+        Yield_mean = mean(Yield, na.rm = TRUE),
+        Yield_sd = sd(Yield, na.rm = TRUE))
+
+anova <- aov(`% Granos_llenos` ~ Tratamiento, data = FR_yield)
+summary(anova)
+TukeyHSD(anova, "Tratamiento")
+
+broom::tidy(anova)
+
+```

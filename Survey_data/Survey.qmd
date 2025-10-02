@@ -1,0 +1,200 @@
+---
+title: "Fertilice Right survey data"
+title-block-banner: true
+date: today
+number-sections: true
+format:
+   html:
+    include-in-header:
+      - text: |
+          <script src = "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js""></script>
+          <script type="text/javascript">
+            $(document).ready(function() {
+              $('body').prepend('<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>');
+              // onClick function for all plots (img's)
+              $('img:not(.zoomImg)').click(function() {
+                $('.zoomImg').attr('src', $(this).attr('src')).css({width: '100%'});
+                $('.zoomDiv').css({opacity: '1', width: 'auto', border: '1px solid white', borderRadius: '5px', position: 'fixed', top: '50%', left: '50%', marginRight: '-50%', transform: 'translate(-50%, -50%)', boxShadow: '0px 0px 50px #888888', zIndex: '50', overflow: 'auto', maxHeight: '100%'});
+              });
+              // onClick function for zoomImg
+              $('img.zoomImg').click(function() {
+                $('.zoomDiv').css({opacity: '0', width: '0%'}); 
+              });
+            });
+          </script>
+    toc: true
+    toc-location: left
+    toc-expand: 3
+    number-sections: true
+    number-depth: 3
+    theme: cosmo
+    df-print: paged
+    code-fold: true 
+    output-fold: true
+editor: visual
+---
+
+Let's call the information from the original surveys 
+
+```{r}
+#| echo: false
+#| output: false
+#| message: false
+#| warning: false
+
+list_p <- c("tidyverse", "readxl", "readr",
+           "haven")
+
+sapply(list_p, function(x){ 
+               if(!require(x, character.only = TRUE)){
+               install.packages(x)
+               library(x, character.only = TRUE)
+               }
+               })
+
+```
+
+```{r}
+#| echo: false
+#| output: false
+#| message: false
+#| warning: false
+
+df <- read_dta("D:\\OneDrive - CGIAR\\R_projects\\Fertilice_right\\Data\\Anonimizado/mod_g2_long.dta") |> 
+      dplyr::select(a10, g7_1, g10_c_1:g10_c_5, 
+                    #g12_1_1:g12_1_5, 
+                    cantidad_kilos_ha_1:cantidad_kilos_ha_5, 
+                    N_TOTAL:K2O_TOTAL) |> 
+      mutate(across(where(is.character), ~ na_if(., ""))) |>
+      as.data.frame()
+      
+```
+
+Select the products that you want to analyze
+
+```{r}
+#| echo: false
+#| output: false
+#| message: false
+#| warning: false
+
+productos <- c("Triple 18", "Urea", "Sulfato de Amonio", 
+               "Cloruro de Potasio", "NITRO XTENDÂ® 46 N", "Nutrimon", 
+               "Ecofertil fase 3", "YaraVera AMIDAS", "Fertilizantes menores", 
+               "DAP 18-46-0", "Patentkali")
+
+df_prod <- df |> 
+           pivot_longer(cols = c(g10_c_1:g10_c_5, cantidad_kilos_ha_1:cantidad_kilos_ha_5), 
+                        names_to = c(".value", "index"), 
+                        names_pattern = "(g10_c|cantidad_kilos_ha)_(\\d)")|>
+           filter(!is.na(g10_c)) |>
+           mutate(Product = tolower(trimws(g10_c)), 
+                  quantity = cantidad_kilos_ha) |> 
+           relocate(c(Product, quantity), .after = g7_1) |> 
+           dplyr::select(-g10_c, -cantidad_kilos_ha) |> 
+           as.data.frame()
+
+
+matched_products <- df_prod |>
+  mutate(
+    best_match = map_chr(Product, \(x) {
+      distances <- stringdist::stringdist(tolower(x), tolower(productos), method = "jw")
+      best_index <- which.min(distances)
+      best_score <- 1 - distances[best_index]
+      if (best_score >= 0.8) productos[best_index] else NA_character_
+    }),
+    match_score = map_dbl(Product, \(x) {
+      1 - min(stringdist::stringdist(tolower(x), tolower(productos), method = "jw"))
+    })
+  ) |>
+  filter(!is.na(best_match))
+
+df_prod_wide <- matched_products |> 
+                dplyr::select(ID = a10, Fert_event = g7_1, Product = best_match, quantity) |>
+                group_by(ID, Fert_event, Product) |>
+                summarise(quantity = sum(as.numeric(quantity), na.rm = TRUE), .groups = "drop") |>
+                pivot_wider(names_from = Product, 
+                            values_from = quantity) |> 
+                arrange(ID, Fert_event)
+
+df_selected <- matched_products |> 
+               dplyr::select(g7_1, Product, quantity) |> 
+               filter(Product %in% c("triple 18", "urea", 
+               "sulfato de amonio 21-0-0-24")) |> 
+               group_by(ID = "a10", Fert_event = "g7_1", Product) |>
+               summarise(quantity = sum(as.numeric(quantity), na.rm = TRUE), .groups = "drop") |>
+              pivot_wider(names_from = Product, 
+                          values_from = quantity) |> 
+              arrange(ID, Fert_event)
+
+
+```
+
+Determine the pecentage f times that the product wat applied
+
+```{r}
+#| echo: false
+#| output: false
+#| message: false
+#| warning: false
+
+df_use <- matched_products |> 
+          distinct(ID = a10, Fert_event = g7_1, 
+                   Product = best_match) 
+
+df_counts <- df_use |>
+             group_by(Product, Fert_event) |>
+             summarise(n_plots = n_distinct(ID), .groups = "drop")
+
+# df_total <- df_use |> 
+#             distinct(ID, Fert_event) |> 
+#             count(Fert_event, name = "total_plots")
+# 
+# df_percentage <- df_counts |> 
+#                  left_join(df_total, by = "Fert_event") |> 
+#                  mutate(percentage = round(n_plots / total_plots * 100,1)) |> 
+#                  arrange(Product, Fert_event, percentage)
+# 
+# df_wide_per <- df_percentage |> 
+#                dplyr::select(-n_plots, -total_plots) |>
+#                pivot_wider(names_from = Fert_event,
+#                            names_prefix = "Event_",
+#                            values_from = percentage, 
+#                            values_fill = 0)
+
+df_wide_counts <- df_counts |> 
+  pivot_wider(
+    names_from = Fert_event,
+    names_prefix = "Event_",
+    values_from = n_plots,
+    values_fill = 0
+  )
+
+df_wide_per <- df_wide_counts |>
+  mutate(
+    total = rowSums(across(starts_with("Event_"))),
+    across(starts_with("Event_"), ~ round(.x / total * 100, 1))) |>
+  select(-total)
+
+```
+
+Let's make the selection of the most applied products
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false 
+
+fert_counts <- df_selected |> 
+               group_by(g7_1, Product) |> 
+               summarize(count = n(), 
+               .groups= "drop")
+
+ggplot(fert_counts, aes(x = Product, y = count)) +
+  geom_col() +
+  facet_wrap(~ g7_1, ncol = 2) +
+  theme_minimal()
+
+```
+
+
