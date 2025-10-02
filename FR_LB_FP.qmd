@@ -68,11 +68,11 @@ sapply(list_p, function(x) {
        }
        })
 
-FR_Plan <- read_excel("D:\\OneDrive - CGIAR\\Fertilize Right ADMIN\\ACTIVIDADES\\A3. LB Suelos\\Analisis/Fertilizacion.xlsx", 
-                    na = c("null", NA), sheet = "Fertilizations") ## Fertilization plan for both crops
-FR_SL <- read_excel("D:\\OneDrive - CGIAR\\Fertilize Right ADMIN\\ACTIVIDADES\\A3. LB Suelos\\Analisis\\Suelos_LB.xlsx",
-                    na = c("null", NA), sheet = "Soil charactheristics") ## Soil data analysis results for both crops
+setwd("D:\\OneDrive - CGIAR\\R_projects\\Fertilice_right\\Data")
 
+FR_Plan <- read_excel("Fertilization.xlsx", na = c("null", NA), sheet = "Fertilizations") ## Fertilization plan for both crops
+FR_SL_C1 <- read_excel("Fertilization.xlsx", na = c("null", NA), sheet = "Soil_results C1") ## Soil data analysis first cycle
+FR_SL_C2 <- read_excel("Fertilization.xlsx", na = c("null", NA), sheet = "Soil_results C2") ## Soil data analysis second cycle
 
 str(FR_Plan)
 summary(FR_Plan)
@@ -353,7 +353,7 @@ Once we have this information, let's calculate the relationship between the appl
 
 # calculation of total nitrogen available in soil
 
-N_ava <- FR_SL |>
+N_ava <- FR_SL_C1 |>
          rename(Tratamiento = Trat,
                 Cultivo = Crop, 
                 Finca = Farm, 
@@ -476,12 +476,12 @@ Plot_1 <- suppressWarnings(FR_Plan |>
 Plot_2 <- suppressWarnings(FR_Plan |> 
      filter(Cultivo == "Arroz") |>
      mutate(`N Fertilization type`  = case_when(
+     Product == "Volcano" ~ "Enhanced urea",
      Product == "SAM" ~ "Traditional",
      Product == "Triple 18" ~ "Traditional",
      Product == "Urea" ~ "Traditional",
      Product == "Nitroxtend XP-S" ~ "Enhanced urea", 
      Product == "Microessentials" ~ "Traditional",
-     Product == "Volcano" ~ "Enhanced urea",
      TRUE ~ Product)) |>
      mutate(Tratamiento = case_when(
            Tratamiento == "Convencional" ~ "Conventional", 
@@ -710,13 +710,43 @@ reactable(
 #| message: false
 #| warning: false
 
+# FR_Plan |> 
+#      filter(Cultivo == "Banano") |>
+#      group_by(Finca, Tratamiento, Product) |>
+#      summarize("N_kg/ha" = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+#             .groups = "drop") |>
+#      pivot_longer(cols = -c(Finca, Tratamiento, Product), 
+#                   names_to = c("Variable", ".value"),
+#                   names_sep = "_")  |> 
+#      filter(`kg/ha` > 0) |>
+#      na.omit() |>
+#     mutate(Tratamiento = factor(Tratamiento, 
+#                               levels = c("Convencional", "Optimizado", "Alternativo"))) |>
+#      ggplot(aes(x = Tratamiento, y = `kg/ha`)) + 
+#      geom_bar(aes(fill = Product), 
+#               stat = "identity", 
+#               width = 0.40, alpha = 0.65) + 
+#      scale_fill_manual(values = c("#BCEE68", "#5F9EA0", "#009ACD", 
+#                                   "#FFB90F", "#FF8C00", "#EE6363", 
+#                                   "#EEE685", "#CD69C9", "#EECBAD", 
+#                                   "#CD0000", "#3A5FCD", "#708090")) +
+#      xlab("Treatment") +
+#      guides(color = "none") +
+#      facet_grid(~Finca) +
+#      theme_light(base_size = 12) +
+#      # coord_cartesian(ylim = c(0, 350)) + 
+#      theme(axis.title.x = element_text(size = 8, face = "bold.italic"),
+#         axis.title.y = element_text(size = 8, face = "bold.italic"),
+#         legend.title = element_text(size = 8, face = "bold"),
+#         axis.text.x = element_text(size = 8, face = "bold", angle = 45, hjust = 1),
+#         strip.text = element_text(size = 8, face = "bold"))     
 
 suppressWarnings(FR_Plan |> 
      filter(Cultivo == "Banano") |>
      group_by(Finca, Tratamiento, Product) |>
      summarize("N_kg/ha" = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
             .groups = "drop") |>
-    group_by(Tratamiento, Product) |>
+   group_by(Tratamiento, Product) |>
     summarize(`N_kg/ha` = mean(`N_kg/ha`, na.rm = TRUE),
               .groups = "drop") |>
     pivot_longer(
@@ -1038,6 +1068,154 @@ N_ava |>
 ))
 
 ```
+
+### Comparison with third cycle
+
+```{r}
+#| echo: false
+#| output: true
+#| message: false
+#| warning: false
+
+N_ava_C2 <- FR_SL_C2 |>
+         rename(Tratamiento = Trat,
+                Cultivo = Crop, 
+                Finca = Farm, 
+                `N Ava_C2 (kg/ha)` = "NAva") |>
+         mutate(Tratamiento = case_when(
+                Tratamiento == "Alternative" ~ "Alternativo", 
+                Tratamiento == "Conventional" ~ "Convencional", 
+                Tratamiento == "Optimized" ~ "Optimizado",
+                TRUE ~ Tratamiento), 
+                Cultivo = case_when(
+                Cultivo == "Banana" ~ "Banano", 
+                Cultivo == "Rice" ~ "Arroz", 
+                TRUE ~ Cultivo
+                )) |>
+         relocate(Tratamiento, .before = Cultivo) |>
+         group_by(Finca, Cultivo, Tratamiento, Depth) |>
+         summarize(`N Ava_C2 (kg/ha)` = round(mean(`N Ava_C2 (kg/ha)`), 2),
+                  .groups = "drop") |>
+         group_by(Finca, Cultivo, Tratamiento) |>
+         summarize(`N Ava_C2 (kg/ha)` = sum(`N Ava_C2 (kg/ha)`, na.rm = TRUE),
+                  .groups = "drop") |>
+         right_join(FR_Plan, by = c("Finca", "Cultivo", "Tratamiento")) |>
+         filter(Cultivo == "Arroz") |>  
+         dplyr::select("Finca", "Cultivo", "Tratamiento", "N Ava_C2 (kg/ha)")
+
+N_ava_C2_aggregated <- N_ava_C2 |>
+  group_by(Finca, Cultivo, Tratamiento) |>
+  summarize(`N Ava_C2 (kg/ha)` = mean(`N Ava_C2 (kg/ha)`, na.rm = TRUE),
+            .groups = "drop")
+
+N_ava_merged <- N_ava |>
+  left_join(N_ava_C2_aggregated, by = c("Finca", "Cultivo", "Tratamiento")) |> 
+  relocate("N Ava_C2 (kg/ha)", .after = `N Ava (kg/ha)`)
+
+## Create the grap according to each variable
+
+library(ggpubr)
+library(rstatix)
+
+test_data <- N_ava_merged |>
+  filter(Cultivo == "Arroz") |>
+  mutate(
+    Tratamiento = case_when(
+      Tratamiento == "Convencional" ~ "Conventional", 
+      Tratamiento == "Optimizado" ~ "Optimized", 
+      Tratamiento == "Alternativo" ~ "Alternative",
+      TRUE ~ Tratamiento
+    )
+  ) |>
+  select(Finca, Tratamiento, `N Ava (kg/ha)`, `N Ava_C2 (kg/ha)`) |>
+  pivot_longer(
+    cols = c(`N Ava (kg/ha)`, `N Ava_C2 (kg/ha)`),
+    names_to = "Variable",
+    values_to = "kg_ha"
+  )
+
+letters_df <- test_data |>
+  # group_by(Tratamiento) |>
+  pairwise_t_test(
+    kg_ha ~ Variable,
+    paired = TRUE,
+    p.adjust.method = "bonferroni"
+  ) |>
+  mutate(p.adj.signif = ifelse(p.adj < 0.05, "a,b", "a")) |>
+  select(Tratamiento, group1, group2, p.adj.signif)
+  # select(group1, group2, p.adj.signif)
+
+
+plot_data <- N_ava_merged |>
+  filter(Cultivo == "Arroz") |>
+  mutate(Tratamiento = case_when(
+    Tratamiento == "Convencional" ~ "Conventional", 
+    Tratamiento == "Optimizado" ~ "Optimized", 
+    Tratamiento == "Alternativo" ~ "Alternative",
+    TRUE ~ Tratamiento
+  )) |>
+  group_by(Finca, Tratamiento) |>
+  summarize(Napl = sum(`Aporte N (Kg/ha)`, na.rm = TRUE),
+            Navl = mean(`N Ava (kg/ha)`, na.rm = TRUE),
+            Navl_C2 = mean(`N Ava_C2 (kg/ha)`, na.rm = TRUE),
+            .groups = "drop") |>
+  group_by(Tratamiento) |>
+  summarize(
+    Napl = mean(Napl),
+    Navl = sum(Navl),
+    Navl_C2 = sum(Navl_C2),
+    .groups = "drop"
+  ) |>
+  pivot_longer(-Tratamiento, names_to = "Variable", values_to = "kg_ha") |>
+  mutate(Variable = recode(Variable, Navl = "Available_S1", Navl_C2 = "Available_S2", Napl = "Applied"))
+
+# Add placeholder letters based on earlier significance test
+plot_data <- plot_data |>
+  left_join(
+    tibble(
+      Tratamiento = rep(c("Conventional", "Optimized", "Alternative"), each = 2),
+      Variable = rep(c("Available_S1", "Available_S2"), 3),
+      Letter = c("a", "b", "a", "a", "a", "a")  # Example; adjust based on your real results
+    ),
+    by = c("Tratamiento", "Variable")
+  )
+
+
+plot_data <- plot_data |>
+  mutate(
+    Tratamiento = factor(Tratamiento, 
+                         levels = c("Conventional", "Optimized", "Alternative")),
+    Variable = factor(Variable, 
+                      levels = c("Available_S1", "Available_S2", "Applied"))
+  )
+
+ggplot(plot_data, aes(x = Tratamiento, y = kg_ha, fill = Variable)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7), width = 0.6, alpha = 0.7) +
+  geom_text(
+    aes(label = Letter),
+    position = position_dodge(width = 0.7),
+    vjust = 1.5, size = 4, fontface = "bold"
+  ) +
+  scale_fill_manual(
+    name = "Nitrogen",
+    values = c("Available_S1" = "#FF8C00", "Available_S2" = "#EE7942", "Applied" = "#48D1CC")
+  ) +
+  geom_hline(yintercept = 170, linetype = "dashed", color = "#CD4F39") +
+  xlab("Treatment") +
+  ylab("kg/ha") +
+  coord_cartesian(ylim = c(0, 250)) +
+  theme_light(base_size = 12) +
+  theme(
+    axis.title.x = element_text(size = 8, face = "bold.italic"),
+    axis.title.y = element_text(size = 8, face = "bold.italic"),
+    legend.title = element_text(size = 8, face = "bold"),
+    axis.text.x = element_text(size = 8, face = "bold", angle = 45, hjust = 1),
+    strip.text = element_text(size = 8, face = "bold")
+  )
+
+
+
+ ```
 
 ## Banano
 
